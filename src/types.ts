@@ -49,6 +49,21 @@ export interface HydrationPayload {
 }
 
 /**
+ * Hydration result on client-side after extraction
+ * Contains validated context and initial data
+ */
+export interface HydrationResult {
+  context: {
+    user?: User;
+    workspace?: Workspace;
+    role?: string;
+    isAuthenticated: boolean;
+  };
+  initialData?: Record<string, any>;
+  timestamp: number;
+}
+
+/**
  * Options for renderAurelia()
  */
 export interface RenderOptions {

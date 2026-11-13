@@ -23,7 +23,7 @@
  * ```
  */
 
-// Public API
+// Public API - Server-side
 export { renderAurelia } from './render.js';
 export { serializeState, validatePayload, stringifyPayload } from './serialize.js';
 export {
@@ -35,6 +35,16 @@ export {
   validateHtmlStructure,
 } from './html.js';
 
+// Public API - Client-side
+export {
+  hydrateFromServer,
+  isHydrationAvailable,
+  peekHydrationPayload,
+  clearHydration,
+  HydrationCache,
+  hydrationCache,
+} from './hydrate.js';
+
 // Types
 export type {
   RenderContext,
@@ -45,6 +55,7 @@ export type {
   DocumentOptions,
   AureliaRouteConfig,
   HydrationOptions,
+  HydrationResult,
 } from './types.js';
 
 // Version
