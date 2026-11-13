@@ -43,12 +43,13 @@ export async function renderAurelia(options: RenderOptions): Promise<string> {
   });
 
   // Setup global objects for Aurelia
+  // In jsdom, window is read-only, so we setup the necessary globals
   const globalThis = dom.window as any;
   globalThis.globalThis = globalThis;
-  globalThis.window = globalThis;
-  globalThis.document = dom.document;
-  globalThis.navigator = dom.window.navigator;
-  globalThis.location = dom.window.location;
+  // Don't reassign window - it's already the window object in jsdom
+  if (!globalThis.document) globalThis.document = dom.document;
+  if (!globalThis.navigator) globalThis.navigator = dom.window.navigator;
+  if (!globalThis.location) globalThis.location = dom.window.location;
 
   try {
     // Render with timeout

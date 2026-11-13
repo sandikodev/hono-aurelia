@@ -30,21 +30,21 @@ export async function serializeState(
 ): Promise<HydrationPayload> {
   try {
     // Validate and clean context
-    const cleanContext = cleanContext(context);
+    const cleanedContext = cleanContext(context);
 
     // Validate and clean initial data
-    const cleanData = initialData ? cleanData(initialData) : undefined;
+    const cleanedData = initialData ? cleanData(initialData) : undefined;
 
     // Create hydration payload
     const payload: HydrationPayload = {
       component: componentName || 'unknown',
       context: {
-        user: cleanContext.user,
-        workspace: cleanContext.workspace,
-        role: cleanContext.role,
-        isAuthenticated: cleanContext.user !== null,
+        user: cleanedContext.user,
+        workspace: cleanedContext.workspace,
+        role: cleanedContext.role,
+        isAuthenticated: cleanedContext.user !== null,
       },
-      initialData: cleanData,
+      initialData: cleanedData,
       timestamp: Date.now(),
     };
 
@@ -116,7 +116,8 @@ function cleanObject(
   const cleaned: Record<string, any> = {};
 
   for (const [key, value] of Object.entries(obj)) {
-    if (sensitiveFields.includes(key.toLowerCase())) {
+    // Check if field is sensitive (case-insensitive)
+    if (sensitiveFields.some(field => field.toLowerCase() === key.toLowerCase())) {
       // Skip sensitive fields
       continue;
     }
