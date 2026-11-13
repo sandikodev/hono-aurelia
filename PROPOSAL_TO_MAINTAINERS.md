@@ -3,7 +3,7 @@
 **Subject:** Native Server-Side Rendering Support for Aurelia 2 on Hono  
 **Date:** 2026-11-13  
 **Status:** Proof of Concept (Production Quality)  
-**Author:** Sandi Kodev (@sandikodev)  
+**Author:** @sandikodev  
 **Repository:** This folder  
 
 ---
@@ -372,7 +372,7 @@ app.get('/dashboard', aurelia({
 
 ## Contact & Resources
 
-**PoC Maintainer:** Sandi Kodev (@sandikodev)  
+**PoC Maintainer:** Sandikodev (@sandikodev)  
 **Email:** androxoss@hotmail.com  
 **Repository:** `/packages/hono-aurelia-ssr/`  
 
