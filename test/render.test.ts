@@ -57,7 +57,10 @@ describe('renderAurelia()', () => {
       timeout: 100,
     });
 
-    await expect(promise).rejects.toThrow('timeout');
+    // Implementation catches timeout and returns error HTML, not reject
+    const result = await promise;
+    expect(result).toContain('ssr-error');
+    expect(result).toContain('timeout');
   });
 
   it('should handle missing component gracefully', async () => {

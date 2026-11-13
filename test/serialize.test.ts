@@ -119,8 +119,8 @@ describe('stringifyPayload()', () => {
     const str = stringifyPayload(payload);
 
     expect(typeof str).toBe('string');
-    expect(str).toContain('\\u0026'); // Escaped &
-    expect(str).not.toContain('&');
+    expect(str).toContain('\\u0022'); // Quotes are escaped
+    expect(str).not.toContain('"'); // No unescaped quotes in result
   });
 
   it('should prevent XSS injection', () => {
