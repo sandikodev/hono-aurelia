@@ -35,6 +35,14 @@ export {
   validateHtmlStructure,
 } from './html.js';
 
+// Public API - Route Adapter
+export {
+  aurelia,
+  createAuthMiddleware,
+  createAureliaRouteGroup,
+} from './adapter.js';
+export type { AuthMiddlewareConfig } from './adapter.js';
+
 // Public API - Client-side
 export {
   hydrateFromServer,
