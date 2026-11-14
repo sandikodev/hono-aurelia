@@ -6,7 +6,16 @@
  */
 
 import { JSDOM } from 'jsdom';
-import { Aurelia, CustomElement, PLATFORM, type Constructable } from 'aurelia';
+import {
+  Aurelia,
+  CustomElement,
+  PLATFORM,
+  Registration,
+  ITemplateElementFactory,
+  IPlatform,
+  resolve,
+  type Constructable,
+} from 'aurelia';
 import type { RenderOptions, RenderContext } from './types.js';
 
 const DOM_PROPS = [
@@ -44,6 +53,34 @@ function syncDomEnvironment(win: Window & Record<string, unknown>): void {
         p[prop] = win[prop];
       }
     }
+  }
+}
+
+/**
+ * Request-scoped TemplateElementFactory for Aurelia 2 SSR.
+ * 
+ * Standard Aurelia 2 TemplateElementFactory caches HTMLTemplateElement instances
+ * across the entire process lifetime in a module-level dictionary (`markupCache`).
+ * In multi-request SSR where each request creates and destroys its own JSDOM instance,
+ * using cached template elements from a destroyed document causes AUR0757 mismatch errors.
+ * 
+ * This SSR factory creates fresh template elements within the active request's DOM document.
+ */
+class SsrTemplateElementFactory implements ITemplateElementFactory {
+  private readonly platform = resolve(IPlatform);
+
+  public createTemplate(input: string | Node): HTMLTemplateElement {
+    if (typeof input === 'string') {
+      const template = this.platform.document.createElement('template');
+      template.innerHTML = input;
+      return template;
+    }
+    if (input.nodeName !== 'TEMPLATE') {
+      const template = this.platform.document.createElement('template');
+      template.content.appendChild(input);
+      return template;
+    }
+    return input as HTMLTemplateElement;
   }
 }
 
@@ -107,7 +144,7 @@ export async function renderAurelia(options: RenderOptions): Promise<string> {
     return result;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error('[renderAurelia]', errorMessage);
+    console.error('[renderAurelia] ERROR:', error);
 
     if (errorMessage.includes('timeout')) {
       return `<div class="ssr-error">${escapeHtml(errorMessage)}</div>`;
@@ -211,15 +248,15 @@ async function performAureliaRender(
 
   rootDefinition = CustomElement.define(
     {
-      ...compDef,
-      name: 'ssr-root-comp',
+      name: `ssr-root-${Date.now()}-${Math.random().toString(36).slice(2)}`,
       template: defTemplate,
     },
     DynamicRoot
   );
 
-  // Initialize Aurelia
+  // Initialize Aurelia with request-scoped template element factory
   const app = new Aurelia();
+  app.register(Registration.singleton(ITemplateElementFactory, SsrTemplateElementFactory));
 
   // Register additional registrations if provided
   if (options.registrations && Array.isArray(options.registrations)) {
