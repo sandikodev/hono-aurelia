@@ -276,6 +276,7 @@ export function aurelia(config: AureliaRouteConfig) {
       // Create full HTML document
       const document = createHtmlDocument(html, payload, {
         title: config.title,
+        ...config.document,
       });
 
       return c.html(document);

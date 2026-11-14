@@ -98,6 +98,7 @@ export interface AureliaRouteConfig {
     [key: string]: (c: any) => Promise<any>;
   };
   fallback?: 'spa' | 'error';
+  document?: DocumentOptions;
 }
 
 /**
