@@ -27,7 +27,7 @@
 
 import type { Context } from 'hono';
 import { renderAurelia } from './render.js';
-import { serializeState, stringifyPayload } from './serialize.js';
+import { serializeState } from './serialize.js';
 import { createHtmlDocument, createErrorHtml, createFallbackHtml } from './html.js';
 import type { AureliaRouteConfig, RenderContext } from './types.js';
 
@@ -209,6 +209,7 @@ export function aurelia(config: AureliaRouteConfig) {
             console.error('Data loading failed:', error);
             return c.html(
               createErrorHtml(
+                500,
                 'Failed to load page data',
                 'Please try refreshing the page'
               ),
@@ -256,6 +257,7 @@ export function aurelia(config: AureliaRouteConfig) {
           // Return error page
           return c.html(
             createErrorHtml(
+              500,
               'Failed to render page',
               'An unexpected error occurred'
             ),
@@ -265,9 +267,11 @@ export function aurelia(config: AureliaRouteConfig) {
       }
 
       // Serialize state for client hydration
-      const payload = await serializeState(context, initialData, {
-        componentName: config.component.name || 'Page',
-      });
+      const payload = await serializeState(
+        context,
+        initialData,
+        config.component.name || 'Page'
+      );
 
       // Create full HTML document
       const document = createHtmlDocument(html, payload, {
@@ -280,6 +284,7 @@ export function aurelia(config: AureliaRouteConfig) {
       console.error('Route handler error:', error);
       return c.html(
         createErrorHtml(
+          500,
           'Internal Server Error',
           'Something went wrong processing your request'
         ),
@@ -316,9 +321,9 @@ export interface AuthMiddlewareConfig {
  */
 export function createAuthMiddleware(config: AuthMiddlewareConfig) {
   return async (c: Context, next: any) => {
-    // Extract token from Authorization header
+    // Extract token from Authorization header, query parameter, or cookie
     const authHeader = c.req.header('Authorization');
-    const token = authHeader?.replace(/^Bearer\s+/i, '');
+    const token = authHeader?.replace(/^Bearer\s+/i, '') || c.req.query('token');
 
     let user = null;
     let workspace = null;

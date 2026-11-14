@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { renderAurelia } from '../src/render.js';
 import type { RenderContext } from '../src/types.js';
 
@@ -51,6 +51,7 @@ describe('renderAurelia()', () => {
       template: '<div>Slow</div>',
     };
 
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const promise = renderAurelia({
       component: SlowComponent,
       context: mockContext,
@@ -59,6 +60,7 @@ describe('renderAurelia()', () => {
 
     // Implementation catches timeout and returns error HTML, not reject
     const result = await promise;
+    spy.mockRestore();
     expect(result).toContain('ssr-error');
     expect(result).toContain('timeout');
   });
@@ -78,9 +80,11 @@ describe('renderAurelia()', () => {
       },
     };
 
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const html = await renderAurelia({
       component: ErrorComponent,
     });
+    spy.mockRestore();
 
     expect(html).toContain('ssr-container');
   });
@@ -114,5 +118,68 @@ describe('renderAurelia()', () => {
     });
 
     expect(html).toContain('Dashboard');
+  });
+
+  it('should render real Aurelia 2 CustomElement with repeat.for and interpolation', async () => {
+    const { CustomElement } = await import('aurelia');
+    const ListComponent = CustomElement.define({
+      name: 'list-comp',
+      template: '<ul><li repeat.for="item of items">${item.name} (${item.role})</li></ul>',
+    }, class {
+      items = [
+        { name: 'Alice', role: 'admin' },
+        { name: 'Bob', role: 'member' },
+      ];
+    });
+
+    const html = await renderAurelia({
+      component: ListComponent,
+    });
+
+    expect(html).toContain('Alice (admin)');
+    expect(html).toContain('Bob (member)');
+    expect(html).toContain('<!--au-start-->');
+    expect(html).toContain('<!--au-end-->');
+  });
+
+  it('should render child components registered via registrations option', async () => {
+    const { CustomElement } = await import('aurelia');
+    const BadgeComp = CustomElement.define({
+      name: 'status-badge',
+      template: '<span class="badge"><au-slot></au-slot></span>',
+    }, class {});
+
+    const PageComp = CustomElement.define({
+      name: 'page-comp',
+      template: '<div class="page">Status: <status-badge>${status}</status-badge></div>',
+    }, class {
+      status = 'Active';
+    });
+
+    const html = await renderAurelia({
+      component: PageComp,
+      registrations: [BadgeComp],
+    });
+
+    expect(html).toContain('<status-badge>');
+    expect(html).toContain('class="badge"');
+    expect(html).toContain('Active');
+  });
+
+  it('should support if.bind conditionals', async () => {
+    const { CustomElement } = await import('aurelia');
+    const ConditionalComp = CustomElement.define({
+      name: 'conditional-comp',
+      template: '<div><span if.bind="isPremium">PRO USER</span><span if.bind="!isPremium">FREE USER</span></div>',
+    }, class {
+      isPremium = true;
+    });
+
+    const html = await renderAurelia({
+      component: ConditionalComp,
+    });
+
+    expect(html).toContain('PRO USER');
+    expect(html).not.toContain('FREE USER');
   });
 });

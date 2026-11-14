@@ -52,14 +52,14 @@ export interface HydrationPayload {
  * Hydration result on client-side after extraction
  * Contains validated context and initial data
  */
-export interface HydrationResult {
+export interface HydrationResult<TData = Record<string, any>> {
   context: {
     user?: User;
     workspace?: Workspace;
     role?: string;
     isAuthenticated: boolean;
   };
-  initialData?: Record<string, any>;
+  initialData?: TData;
   timestamp: number;
 }
 
@@ -71,6 +71,9 @@ export interface RenderOptions {
   context?: RenderContext;
   props?: Record<string, any>;
   timeout?: number;
+  registrations?: any[];
+  settle?: number;
+  url?: string;
 }
 
 /**

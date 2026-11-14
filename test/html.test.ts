@@ -8,7 +8,7 @@ import {
   validateHtmlStructure,
 } from '../src/html.js';
 import { serializeState } from '../src/serialize.js';
-import type { RenderContext, HydrationPayload } from '../src/types.js';
+import type { RenderContext } from '../src/types.js';
 
 describe('createHtmlDocument()', () => {
   const mockContext: RenderContext = {

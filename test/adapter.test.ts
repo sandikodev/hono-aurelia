@@ -16,7 +16,7 @@ const MockComponent = {
 };
 
 // Mock context
-const mockContext = {
+const _mockContext = {
   user: { id: '1', email: 'user@example.com', name: 'Test User' },
   workspace: { id: 'ws-1', name: 'Test Workspace' },
   role: 'admin',
@@ -44,7 +44,7 @@ describe('aurelia() route handler', () => {
       );
 
       // Set context manually since we're not testing middleware
-      const c = app.request('/page', { headers: { 'Accept': 'text/html' } });
+      const _c = app.request('/page', { headers: { 'Accept': 'text/html' } });
       // Context would normally be set by auth middleware
     });
 
@@ -394,7 +394,7 @@ describe('createAuthMiddleware()', () => {
   });
 
   it('loads user from token', async () => {
-    const getUserFromToken = vi.fn(async (token) => ({
+    const getUserFromToken = vi.fn(async (_token) => ({
       id: '1',
       email: 'user@example.com',
     }));
@@ -414,7 +414,7 @@ describe('createAuthMiddleware()', () => {
   });
 
   it('determines role for user', async () => {
-    const getRoleForUser = vi.fn((user, workspace) => 'admin');
+    const getRoleForUser = vi.fn((_user, _workspace) => 'admin');
 
     const middleware = createAuthMiddleware({ getRoleForUser });
     expect(middleware).toBeDefined();

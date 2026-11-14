@@ -10,14 +10,14 @@ import type { HydrationPayload } from './types'
 /**
  * Hydration result containing context and initial data
  */
-export interface HydrationResult {
+export interface HydrationResult<TData = Record<string, any>> {
   context: {
     user?: any
     workspace?: any
     role?: any
     isAuthenticated: boolean
   }
-  initialData?: Record<string, any>
+  initialData?: TData
   timestamp: number
 }
 
@@ -51,15 +51,20 @@ export interface HydrationResult {
  * @returns Hydration result or null if not available
  * @throws Error if hydration payload is invalid or expired
  */
-export function hydrateFromServer(options?: {
+function getGlobalStorage(): Record<string, unknown> {
+  return globalThis as unknown as Record<string, unknown>;
+}
+
+export function hydrateFromServer<TData = Record<string, unknown>>(options?: {
   maxAge?: number
   payloadKey?: string
-}): HydrationResult | null {
+}): HydrationResult<TData> | null {
   const maxAge = options?.maxAge ?? 30_000
   const payloadKey = options?.payloadKey ?? '__HYDRATION__'
 
   // Check if payload exists on window
-  const payload = (globalThis as any)[payloadKey] as HydrationPayload | undefined
+  const storage = getGlobalStorage()
+  const payload = storage[payloadKey] as HydrationPayload | undefined
 
   if (!payload) {
     return null
@@ -87,14 +92,14 @@ export function hydrateFromServer(options?: {
   }
 
   // Create hydration result
-  const result: HydrationResult = {
+  const result: HydrationResult<TData> = {
     context,
-    initialData: payload.initialData,
+    initialData: payload.initialData as TData | undefined,
     timestamp: payload.timestamp,
   }
 
   // Clear payload from window to prevent accidental reuse
-  delete (globalThis as any)[payloadKey]
+  delete storage[payloadKey]
 
   return result
 }
@@ -107,25 +112,27 @@ export function hydrateFromServer(options?: {
  * 
  * @throws TypeError if payload structure is invalid
  */
-function validatePayload(payload: any): asserts payload is HydrationPayload {
+function validatePayload(payload: unknown): asserts payload is HydrationPayload {
   if (!payload || typeof payload !== 'object') {
     throw new TypeError('Hydration payload must be an object')
   }
 
-  if (typeof payload.component !== 'string') {
+  const obj = payload as Record<string, unknown>
+
+  if (typeof obj.component !== 'string') {
     throw new TypeError('Hydration payload.component must be a string')
   }
 
-  if (!payload.context || typeof payload.context !== 'object') {
+  if (!obj.context || typeof obj.context !== 'object') {
     throw new TypeError('Hydration payload.context must be an object')
   }
 
-  if (typeof payload.timestamp !== 'number' || payload.timestamp <= 0) {
+  if (typeof obj.timestamp !== 'number' || obj.timestamp <= 0) {
     throw new TypeError('Hydration payload.timestamp must be a positive number')
   }
 
   // initialData is optional but must be object if present
-  if (payload.initialData !== undefined && typeof payload.initialData !== 'object') {
+  if (obj.initialData !== undefined && typeof obj.initialData !== 'object') {
     throw new TypeError('Hydration payload.initialData must be an object if provided')
   }
 }
@@ -140,7 +147,7 @@ function validatePayload(payload: any): asserts payload is HydrationPayload {
  * @returns True if hydration payload is available
  */
 export function isHydrationAvailable(payloadKey = '__HYDRATION__'): boolean {
-  const payload = (globalThis as any)[payloadKey]
+  const payload = getGlobalStorage()[payloadKey]
   return !!payload
 }
 
@@ -156,7 +163,7 @@ export function isHydrationAvailable(payloadKey = '__HYDRATION__'): boolean {
 export function peekHydrationPayload(
   payloadKey = '__HYDRATION__'
 ): HydrationPayload | undefined {
-  return (globalThis as any)[payloadKey] as HydrationPayload | undefined
+  return getGlobalStorage()[payloadKey] as HydrationPayload | undefined
 }
 
 /**
@@ -168,7 +175,7 @@ export function peekHydrationPayload(
  * @param payloadKey - Window property containing hydration (default: '__HYDRATION__')
  */
 export function clearHydration(payloadKey = '__HYDRATION__'): void {
-  delete (globalThis as any)[payloadKey]
+  delete getGlobalStorage()[payloadKey]
 }
 
 /**
@@ -233,7 +240,7 @@ export class HydrationCache {
       }
 
       return entry.value
-    } catch (error) {
+    } catch {
       // Invalid JSON or sessionStorage error
       return null
     }
@@ -253,7 +260,7 @@ export class HydrationCache {
     const fullKey = this.prefix + key
     try {
       sessionStorage.removeItem(fullKey)
-    } catch (error) {
+    } catch {
       // sessionStorage might be unavailable
     }
   }
@@ -269,7 +276,7 @@ export class HydrationCache {
           sessionStorage.removeItem(key)
         }
       }
-    } catch (error) {
+    } catch {
       // sessionStorage might be unavailable
     }
   }
