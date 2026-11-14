@@ -109,7 +109,7 @@ describe('validatePayload()', () => {
 });
 
 describe('stringifyPayload()', () => {
-  it('should produce escaped JSON string', async () => {
+  it('should produce valid JSON string for script tag assignment', async () => {
     const payload = await serializeState({
       user: { id: 'u1', email: 'test@example.com', name: 'Test' },
       workspace: null,
@@ -119,8 +119,11 @@ describe('stringifyPayload()', () => {
     const str = stringifyPayload(payload);
 
     expect(typeof str).toBe('string');
-    expect(str).toContain('\\u0022'); // Quotes are escaped
-    expect(str).not.toContain('"'); // No unescaped quotes in result
+    // Double quotes must remain valid JSON/JS string delimiters
+    expect(str).toContain('"');
+    expect(str).not.toContain('\\u0022');
+    // Must be directly parseable as JSON and valid in a JS expression
+    expect(JSON.parse(str)).toHaveProperty('context');
   });
 
   it('should prevent XSS injection', () => {
@@ -132,8 +135,9 @@ describe('stringifyPayload()', () => {
 
     const str = stringifyPayload(maliciousPayload);
 
-    // Should be escaped
-    expect(str).toContain('\\u003c'); // Escaped <
-    expect(str).toContain('\\u003e'); // Escaped >
+    // < and > must be escaped so browser HTML parser cannot break out of <script>
+    expect(str).toContain('\\u003c');
+    expect(str).toContain('\\u003e');
+    expect(str).not.toContain('<script>');
   });
 });

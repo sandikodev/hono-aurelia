@@ -35,12 +35,25 @@ describe('createHtmlDocument()', () => {
     expect(html).toContain('<script');
   });
 
-  it('should include hydration payload', async () => {
+  it('should include hydration payload with valid executable JavaScript', async () => {
     const payload = await serializeState(mockContext);
     const html = createHtmlDocument('<div>Test</div>', payload);
 
-    expect(html).toContain('window.__HYDRATION__');
+    expect(html).toContain('window.__HYDRATION__ = ');
     expect(html).toContain('window.__HYDRATION_TIME__');
+    
+    // Extract script content and verify it doesn't have syntax errors
+    const scriptMatch = html.match(/<script>([\s\S]*?)<\/script>/);
+    expect(scriptMatch).not.toBeNull();
+    const scriptContent = scriptMatch![1];
+    expect(scriptContent).not.toContain('\\u0022');
+    
+    // Evaluating the script must succeed without SyntaxError
+    const testScope: any = {};
+    const execute = new Function('window', scriptContent);
+    expect(() => execute(testScope)).not.toThrow();
+    expect(testScope.__HYDRATION__).toBeDefined();
+    expect(testScope.__HYDRATION__.context.isAuthenticated).toBe(true);
   });
 
   it('should include body content', async () => {

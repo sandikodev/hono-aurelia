@@ -210,16 +210,27 @@ export function validatePayload(payload: HydrationPayload): boolean {
 }
 
 /**
- * Serialize payload to JSON string with escaping for HTML
+ * Serialize payload to JSON string with escaping for HTML script context
+ * 
+ * Safely escapes characters that could break out of a `<script>` tag (XSS):
+ * - `<` to `\u003c` (prevents </script> and <!-- tag breaks)
+ * - `>` to `\u003e`
+ * - `&` to `\u0026`
+ * - `\u2028` and `\u2029` (prevents JS newline issues)
+ * 
+ * NOTE: Double quotes `"` and single quotes `'` MUST NOT be converted to unicode
+ * escapes (`\u0022`), because when embedded directly in a JavaScript assignment
+ * (`window.__HYDRATION__ = ${json};`), `\u0022` is an illegal token in JavaScript
+ * syntax outside strings and will cause `SyntaxError: Invalid or unexpected token`.
  */
 export function stringifyPayload(payload: HydrationPayload): string {
   const json = JSON.stringify(payload);
   
-  // Escape special characters for HTML context
+  // Escape special characters for HTML <script> context to prevent XSS
   return json
     .replace(/&/g, '\\u0026')
     .replace(/</g, '\\u003c')
     .replace(/>/g, '\\u003e')
-    .replace(/"/g, '\\u0022')
-    .replace(/'/g, '\\u0027');
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029');
 }
