@@ -1,27 +1,46 @@
 /**
  * @hono/aurelia-ssr State Serialization
  * 
- * Serialize auth context and initial data for hydration.
+ * Serialize auth context and initial data for hydration with strict whitelist
+ * projection to guarantee sensitive fields are never leaked to the client.
  */
 
-import type { RenderContext, HydrationPayload } from './types.js';
+import type { RenderContext, HydrationPayload, User, Workspace } from './types.js';
 
 /**
- * Serialize auth context + initial data for client hydration
+ * Public User DTO whitelist fields safe to send to browser.
+ */
+const ALLOWED_USER_FIELDS = new Set([
+  'id',
+  'email',
+  'name',
+  'avatarUrl',
+  'avatar',
+  'role',
+  'createdAt',
+]);
+
+/**
+ * Public Workspace DTO whitelist fields safe to send to browser.
+ */
+const ALLOWED_WORKSPACE_FIELDS = new Set([
+  'id',
+  'name',
+  'slug',
+  'plan',
+  'role',
+]);
+
+/**
+ * Serialize auth context + initial data for client hydration.
+ *
+ * Employs a strict whitelist projection for user and workspace contexts
+ * to eliminate credential and token leakage vectors.
  * 
  * @param context - Auth context (user, workspace, role)
  * @param initialData - Optional initial data to hydrate
  * @param componentName - Component name for validation
  * @returns Promise<HydrationPayload>
- * 
- * @example
- * ```typescript
- * const payload = await serializeState(
- *   { user, workspace, role },
- *   { overview: dashboardData, activity: activityData },
- *   'dashboard-page'
- * );
- * ```
  */
 export async function serializeState(
   context: RenderContext,
@@ -29,10 +48,10 @@ export async function serializeState(
   componentName?: string
 ): Promise<HydrationPayload> {
   try {
-    // Validate and clean context
-    const cleanedContext = cleanContext(context);
+    // Project context through whitelist
+    const cleanedContext = projectContext(context);
 
-    // Validate and clean initial data
+    // Recursively clean and sanitize initial data
     const cleanedData = initialData
       ? (cleanData(initialData) as Record<string, unknown> | undefined)
       : undefined;
@@ -52,9 +71,9 @@ export async function serializeState(
 
     return payload;
   } catch (error) {
-    console.error('[serializeState]', error);
+    console.error('[serializeState] ERROR:', error);
     
-    // Fallback to minimal payload
+    // Fallback to safe minimal unauthenticated payload
     return {
       component: componentName || 'unknown',
       context: {
@@ -69,79 +88,52 @@ export async function serializeState(
 }
 
 /**
- * Clean context by removing sensitive fields
+ * Whitelist-based projection of auth context.
+ * Guarantees that only explicitly approved properties are serialized.
  */
-function cleanContext(context: RenderContext): RenderContext {
-  const SENSITIVE_FIELDS = [
-    'password',
-    'refreshToken',
-    'apiKey',
-    'secretKey',
-    'token',
-    'secret',
-  ];
-
-  const result = { ...context };
-
-  // Clean user object
-  if (result.user) {
-    result.user = cleanObject(result.user, SENSITIVE_FIELDS) as RenderContext['user'];
-  }
-
-  // Clean workspace object
-  if (result.workspace) {
-    result.workspace = cleanObject(result.workspace, SENSITIVE_FIELDS) as RenderContext['workspace'];
-  }
-
-  return result;
+function projectContext(context: RenderContext): RenderContext {
+  return {
+    user: context.user ? projectObject<User>(context.user, ALLOWED_USER_FIELDS) : null,
+    workspace: context.workspace ? projectObject<Workspace>(context.workspace, ALLOWED_WORKSPACE_FIELDS) : null,
+    role: typeof context.role === 'string' ? context.role : null,
+  };
 }
 
 /**
- * Remove sensitive fields from object
+ * Project an object by keeping only whitelisted keys and primitive values.
  */
-function cleanObject(
+function projectObject<T extends Record<string, unknown>>(
   obj: unknown,
-  sensitiveFields: string[]
-): unknown {
-  if (obj === null || obj === undefined) {
-    return obj;
+  allowedKeys: Set<string>
+): T | null {
+  if (obj === null || typeof obj !== 'object' || Array.isArray(obj)) {
+    return null;
   }
 
-  if (typeof obj !== 'object') {
-    return obj;
-  }
-
-  if (Array.isArray(obj)) {
-    return obj.map((item) => cleanObject(item, sensitiveFields));
-  }
-
-  const cleaned: Record<string, unknown> = {};
+  const result: Record<string, unknown> = {};
 
   for (const [key, value] of Object.entries(obj)) {
-    // Check if field is sensitive (case-insensitive)
-    if (sensitiveFields.some(field => field.toLowerCase() === key.toLowerCase())) {
-      // Skip sensitive fields
+    if (!allowedKeys.has(key)) {
       continue;
     }
 
-    // Recursively clean nested objects
-    if (value !== null && typeof value === 'object') {
-      cleaned[key] = cleanObject(value, sensitiveFields);
-    } else if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-      cleaned[key] = value;
+    // Only allow serializable primitives or clean nested structures
+    if (value === null || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+      result[key] = value;
+    } else if (typeof value === 'object') {
+      result[key] = cleanData(value);
     }
-    // Skip functions, symbols, undefined
   }
 
-  return cleaned;
+  return result as T;
 }
 
 /**
- * Recursively clean data, removing circular references
+ * Recursively clean data, removing circular references, functions, and symbols
  */
 function cleanData(
   data: unknown,
-  seen = new WeakSet()
+  seen = new WeakSet<object>()
 ): unknown {
   if (data === null || data === undefined) {
     return data;
@@ -152,7 +144,7 @@ function cleanData(
     return data;
   }
 
-  // Skip functions and symbols
+  // Skip non-serializable types
   if (typeof data === 'function' || typeof data === 'symbol') {
     return undefined;
   }
@@ -212,23 +204,17 @@ export function validatePayload(payload: HydrationPayload): boolean {
 }
 
 /**
- * Serialize payload to JSON string with escaping for HTML script context
+ * Serialize payload to JSON string with escaping for HTML script context.
  * 
  * Safely escapes characters that could break out of a `<script>` tag (XSS):
  * - `<` to `\u003c` (prevents </script> and <!-- tag breaks)
  * - `>` to `\u003e`
  * - `&` to `\u0026`
  * - `\u2028` and `\u2029` (prevents JS newline issues)
- * 
- * NOTE: Double quotes `"` and single quotes `'` MUST NOT be converted to unicode
- * escapes (`\u0022`), because when embedded directly in a JavaScript assignment
- * (`window.__HYDRATION__ = ${json};`), `\u0022` is an illegal token in JavaScript
- * syntax outside strings and will cause `SyntaxError: Invalid or unexpected token`.
  */
 export function stringifyPayload(payload: HydrationPayload): string {
   const json = JSON.stringify(payload);
   
-  // Escape special characters for HTML <script> context to prevent XSS
   return json
     .replace(/&/g, '\\u0026')
     .replace(/</g, '\\u003c')

@@ -2,7 +2,8 @@
  * @hono/aurelia-ssr Renderer
  * 
  * Production-grade Server-Side Rendering engine for Aurelia 2 on Hono.
- * Boots real Aurelia 2 components in an isolated server DOM environment.
+ * Boots real Aurelia 2 components in an isolated server DOM environment with
+ * concurrency mutex locks, environment snapshot/restore, and memory-safe caching.
  */
 
 import { JSDOM } from 'jsdom';
@@ -13,10 +14,52 @@ import {
   Registration,
   ITemplateElementFactory,
   IPlatform,
+  DI,
   resolve,
   type Constructable,
 } from 'aurelia';
 import type { RenderOptions, RenderContext } from './types.js';
+
+interface ISSRContext {
+  readonly preserveMarkers: boolean;
+}
+const ISSRContext = /*@__PURE__*/ DI.createInterface<ISSRContext>('ISSRContext');
+
+/**
+ * Single-process FIFO mutex to prevent concurrent SSR requests from clobbering
+ * shared Aurelia PLATFORM and DOM globals during the render critical section.
+ */
+class RenderMutex {
+  private queue: Array<() => void> = [];
+  private locked = false;
+
+  public async acquire(): Promise<() => void> {
+    if (this.locked) {
+      await new Promise<void>((resolvePromise) => this.queue.push(resolvePromise));
+    }
+    this.locked = true;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      if (this.queue.length > 0) {
+        const next = this.queue.shift()!;
+        next();
+      } else {
+        this.locked = false;
+      }
+    };
+  }
+}
+
+const renderMutex = new RenderMutex();
+
+/**
+ * Cache for wrapped plain objects / plain classes to prevent defining
+ * dynamic custom element classes on every request (which causes metadata leaks).
+ */
+const plainWrapperCache = new WeakMap<object, Constructable>();
+let plainWrapperCounter = 0;
 
 const DOM_PROPS = [
   'window',
@@ -38,6 +81,123 @@ const DOM_PROPS = [
 ] as const;
 
 /**
+ * In-memory storage shim for localStorage and sessionStorage on server
+ */
+class MemoryStorage implements Storage {
+  private store = new Map<string, string>();
+
+  public get length(): number {
+    return this.store.size;
+  }
+
+  public clear(): void {
+    this.store.clear();
+  }
+
+  public getItem(key: string): string | null {
+    return this.store.has(key) ? this.store.get(key)! : null;
+  }
+
+  public key(index: number): string | null {
+    const keys = Array.from(this.store.keys());
+    return keys[index] ?? null;
+  }
+
+  public removeItem(key: string): void {
+    this.store.delete(key);
+  }
+
+  public setItem(key: string, value: string): void {
+    this.store.set(key, String(value));
+  }
+}
+
+/**
+ * Install safe browser shims on the JSDOM window so components reading
+ * window APIs during SSR do not throw errors.
+ */
+function installBrowserShims(win: Window & Record<string, unknown>): void {
+  // localStorage / sessionStorage
+  if (!win.localStorage) {
+    Object.defineProperty(win, 'localStorage', {
+      value: new MemoryStorage(),
+      configurable: true,
+      writable: true,
+    });
+  }
+  if (!win.sessionStorage) {
+    Object.defineProperty(win, 'sessionStorage', {
+      value: new MemoryStorage(),
+      configurable: true,
+      writable: true,
+    });
+  }
+
+  // matchMedia shim
+  if (!win.matchMedia) {
+    win.matchMedia = (query: string) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => false,
+    });
+  }
+
+  // ResizeObserver shim
+  if (!win.ResizeObserver) {
+    win.ResizeObserver = class {
+      public observe(): void {}
+      public unobserve(): void {}
+      public disconnect(): void {}
+    };
+  }
+
+  // requestAnimationFrame / cancelAnimationFrame
+  if (!win.requestAnimationFrame) {
+    win.requestAnimationFrame = (callback: FrameRequestCallback) =>
+      setTimeout(() => callback(Date.now()), 16) as unknown as number;
+  }
+  if (!win.cancelAnimationFrame) {
+    win.cancelAnimationFrame = (id: number) => clearTimeout(id);
+  }
+
+  // scrollTo / scroll
+  if (!win.scrollTo) {
+    win.scrollTo = () => {};
+  }
+  if (!win.scroll) {
+    win.scroll = () => {};
+  }
+}
+
+/**
+ * Snapshot existing globalThis and PLATFORM properties before sync.
+ */
+function snapshotEnvironment(): {
+  globalDescriptors: Map<string, PropertyDescriptor | undefined>;
+  platformProps: Map<string, unknown>;
+} {
+  const globalDescriptors = new Map<string, PropertyDescriptor | undefined>();
+  for (const prop of DOM_PROPS) {
+    globalDescriptors.set(prop, Object.getOwnPropertyDescriptor(globalThis, prop));
+  }
+
+  const platformProps = new Map<string, unknown>();
+  const p = PLATFORM as unknown as Record<string, unknown>;
+  for (const prop of DOM_PROPS) {
+    if (p && prop in p) {
+      platformProps.set(prop, p[prop]);
+    }
+  }
+
+  return { globalDescriptors, platformProps };
+}
+
+/**
  * Synchronize DOM window globals and Aurelia's BrowserPlatform
  */
 function syncDomEnvironment(win: Window & Record<string, unknown>): void {
@@ -53,6 +213,27 @@ function syncDomEnvironment(win: Window & Record<string, unknown>): void {
         p[prop] = win[prop];
       }
     }
+  }
+}
+
+/**
+ * Restore previous environment state
+ */
+function restoreEnvironment(snapshot: {
+  globalDescriptors: Map<string, PropertyDescriptor | undefined>;
+  platformProps: Map<string, unknown>;
+}): void {
+  for (const [prop, desc] of snapshot.globalDescriptors.entries()) {
+    if (desc !== undefined) {
+      Object.defineProperty(globalThis, prop, desc);
+    } else {
+      delete (globalThis as Record<string, unknown>)[prop];
+    }
+  }
+
+  const p = PLATFORM as unknown as Record<string, unknown>;
+  for (const [prop, val] of snapshot.platformProps.entries()) {
+    p[prop] = val;
   }
 }
 
@@ -112,6 +293,9 @@ export async function renderAurelia(options: RenderOptions): Promise<string> {
     throw new Error('renderAurelia: component is required');
   }
 
+  const releaseMutex = await renderMutex.acquire();
+  const snapshot = snapshotEnvironment();
+
   // Create isolated DOM environment
   const dom = new JSDOM('<!DOCTYPE html><html><body><div id="ssr-root"></div></body></html>', {
     url: options.url || 'http://localhost/',
@@ -120,6 +304,7 @@ export async function renderAurelia(options: RenderOptions): Promise<string> {
   });
 
   const win = dom.window as unknown as Window & Record<string, unknown>;
+  installBrowserShims(win);
   syncDomEnvironment(win);
 
   try {
@@ -157,6 +342,8 @@ export async function renderAurelia(options: RenderOptions): Promise<string> {
     } catch {
       // Ignore cleanup errors
     }
+    restoreEnvironment(snapshot);
+    releaseMutex();
   }
 }
 
@@ -188,75 +375,79 @@ async function performAureliaRender(
     template = template.replace(/\{\{([^}]+)\}\}/g, '${$1}');
   }
 
-  // Setup component definition and instance
-  let rootDefinition: Constructable<object> | object;
-  const instance: Record<string, unknown> = {};
-
-  // Inject context and props into instance
-  instance._renderContext = context;
-  instance.user = context.user;
-  instance.workspace = context.workspace;
-  instance.role = context.role;
-  Object.assign(instance, props);
-
-  let defTemplate = template;
-  let compDef: ReturnType<typeof CustomElement.getDefinition> | null = null;
-  let attachedHook: (() => Promise<void> | void) | null = null;
+  let rootComponent: Constructable | object;
 
   if (CustomElement.isType(component)) {
-    compDef = CustomElement.getDefinition(component);
-    const origInstance = new compDef.Type() as Record<string, unknown> & { attached?: () => Promise<void> | void };
-    attachedHook = origInstance.attached ?? null;
-    Object.assign(instance, origInstance, props);
-    const rawTemplate = compDef.template;
-    const stringTemplate = typeof rawTemplate === 'string' ? rawTemplate : undefined;
-    defTemplate = defTemplate || stringTemplate || '<div></div>';
+    // If component is a defined CustomElement class, instantiate directly
+    const instance = new (component as Constructable)() as Record<string, unknown>;
+    instance._renderContext = context;
+    instance.user = context.user;
+    instance.workspace = context.workspace;
+    instance.role = context.role;
+    Object.assign(instance, props);
+    rootComponent = instance;
   } else if (typeof component === 'function') {
-    const ComponentClass = component as new () => Record<string, unknown> & {
-      template?: string;
-      attached?: () => Promise<void> | void;
-    };
-    const origInstance = new ComponentClass();
-    attachedHook = origInstance.attached ?? null;
-    Object.assign(instance, origInstance, props);
-    defTemplate = defTemplate || origInstance.template || '<div></div>';
+    // Plain class (not decorated with CustomElement)
+    let Wrapper = plainWrapperCache.get(component as object);
+    if (!Wrapper) {
+      Wrapper = CustomElement.define(
+        {
+          name: `ssr-class-wrapper-${++plainWrapperCounter}`,
+          template: template || '<div></div>',
+        },
+        component as Constructable
+      );
+      plainWrapperCache.set(component as object, Wrapper);
+    }
+    const instance = new Wrapper() as Record<string, unknown>;
+    instance._renderContext = context;
+    instance.user = context.user;
+    instance.workspace = context.workspace;
+    instance.role = context.role;
+    Object.assign(instance, props);
+    rootComponent = instance;
   } else if (typeof component === 'object' && component !== null) {
-    const compObj = component as Record<string, unknown> & {
-      template?: string;
-      attached?: () => Promise<void> | void;
-    };
-    attachedHook = compObj.attached ?? null;
-    Object.assign(instance, compObj, props);
-    defTemplate = defTemplate || compObj.template || '<div></div>';
+    // Plain object component: { template: '...', ...props }
+    let Wrapper = plainWrapperCache.get(component);
+    if (!Wrapper) {
+      const plainObj = component as Record<string, unknown> & { template?: string };
+      class PlainObjWrapper {
+        constructor() {
+          Object.assign(this, plainObj);
+        }
+      }
+      // If plainObj has methods (e.g. attached, binding), copy to prototype
+      for (const key of Object.getOwnPropertyNames(plainObj)) {
+        if (typeof plainObj[key] === 'function' && key !== 'constructor') {
+          (PlainObjWrapper.prototype as Record<string, unknown>)[key] = plainObj[key];
+        }
+      }
+      Wrapper = CustomElement.define(
+        {
+          name: `ssr-obj-wrapper-${++plainWrapperCounter}`,
+          template: template || plainObj.template || '<div></div>',
+        },
+        PlainObjWrapper
+      );
+      plainWrapperCache.set(component, Wrapper);
+    }
+    const instance = new Wrapper() as Record<string, unknown>;
+    instance._renderContext = context;
+    instance.user = context.user;
+    instance.workspace = context.workspace;
+    instance.role = context.role;
+    Object.assign(instance, props);
+    rootComponent = instance;
   } else {
     throw new Error('renderAurelia: component is invalid');
   }
 
-  const BaseClass = (compDef?.Type || (typeof component === 'function' ? component : Object)) as new () => Record<string, unknown>;
-
-  class DynamicRoot extends BaseClass {
-    constructor() {
-      super();
-      Object.assign(this, instance);
-    }
-    async attached() {
-      if (typeof attachedHook === 'function') {
-        await attachedHook.call(this);
-      }
-    }
-  }
-
-  rootDefinition = CustomElement.define(
-    {
-      name: `ssr-root-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      template: defTemplate,
-    },
-    DynamicRoot
-  );
-
-  // Initialize Aurelia with request-scoped template element factory
+  // Initialize Aurelia with request-scoped template element factory and SSR marker preservation
   const app = new Aurelia();
-  app.register(Registration.singleton(ITemplateElementFactory, SsrTemplateElementFactory));
+  app.register(
+    Registration.singleton(ITemplateElementFactory, SsrTemplateElementFactory),
+    Registration.instance(ISSRContext, { preserveMarkers: true })
+  );
 
   // Register additional registrations if provided
   if (options.registrations && Array.isArray(options.registrations)) {
@@ -269,9 +460,9 @@ async function performAureliaRender(
   }
 
   // Mount and start Aurelia application
-  await app.app({ host, component: rootDefinition }).start();
+  await app.app({ host, component: rootComponent }).start();
 
-  // If a settle delay is requested (or default microtask drain)
+  // If a settle delay is requested (or microtask drain)
   if (options.settle && options.settle > 0) {
     await new Promise((r) => setTimeout(r, options.settle));
   }

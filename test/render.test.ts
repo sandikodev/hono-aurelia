@@ -182,4 +182,63 @@ describe('renderAurelia()', () => {
     expect(html).toContain('PRO USER');
     expect(html).not.toContain('FREE USER');
   });
+
+  it('should handle concurrent rendering without cross-request state contamination', async () => {
+    const { CustomElement } = await import('aurelia');
+    const UserBadgeComp = CustomElement.define({
+      name: 'user-badge-comp',
+      template: '<div class="user-badge">${title}: ${username} (${role})</div>',
+    }, class {
+      title = '';
+      username = '';
+      role = '';
+    });
+
+    const requests = Array.from({ length: 10 }, (_, i) =>
+      renderAurelia({
+        component: UserBadgeComp,
+        props: {
+          title: `Request-${i}`,
+          username: `User-${i}`,
+          role: i % 2 === 0 ? 'Admin' : 'Member',
+        },
+      })
+    );
+
+    const outputs = await Promise.all(requests);
+
+    for (let i = 0; i < 10; i++) {
+      expect(outputs[i]).toContain(`Request-${i}: User-${i}`);
+      expect(outputs[i]).toContain(i % 2 === 0 ? '(Admin)' : '(Member)');
+    }
+  });
+
+  it('should safely provide browser shims (localStorage, matchMedia, ResizeObserver)', async () => {
+    const { CustomElement } = await import('aurelia');
+    const BrowserAwareComp = CustomElement.define({
+      name: 'browser-aware-comp',
+      template: '<div>Storage: ${storedVal}, Media: ${isMobile}</div>',
+    }, class {
+      storedVal = '';
+      isMobile = false;
+
+      binding() {
+        if (typeof window !== 'undefined' && window.localStorage) {
+          window.localStorage.setItem('theme', 'dark');
+          this.storedVal = window.localStorage.getItem('theme') || '';
+        }
+        if (typeof window !== 'undefined' && window.matchMedia) {
+          const mq = window.matchMedia('(max-width: 600px)');
+          this.isMobile = mq.matches;
+        }
+      }
+    });
+
+    const html = await renderAurelia({
+      component: BrowserAwareComp,
+    });
+
+    expect(html).toContain('Storage: dark');
+    expect(html).toContain('Media: false');
+  });
 });
