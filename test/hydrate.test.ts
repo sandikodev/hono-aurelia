@@ -261,40 +261,37 @@ describe('HydrationCache', () => {
   })
 
   it('respects custom TTL', () => {
-    // Mock Date.now() to control time
     const now = Date.now()
-    vi.useFakeTimers()
-    vi.setSystemTime(now)
+    const spy = vi.spyOn(Date, 'now').mockReturnValue(now)
 
     cache.set('key', { data: 'value' }, 1000) // 1 second TTL
 
     // Still fresh at 500ms
-    vi.advanceTimersByTime(500)
+    spy.mockReturnValue(now + 500)
     expect(cache.get('key')).not.toBeNull()
 
     // Expired at 1500ms
-    vi.advanceTimersByTime(1000)
+    spy.mockReturnValue(now + 1500)
     expect(cache.get('key')).toBeNull()
 
-    vi.useRealTimers()
+    spy.mockRestore()
   })
 
   it('defaults to 24 hour TTL', () => {
     const now = Date.now()
-    vi.useFakeTimers()
-    vi.setSystemTime(now)
+    const spy = vi.spyOn(Date, 'now').mockReturnValue(now)
 
     cache.set('key', { data: 'value' })
 
     // Still fresh at 12 hours
-    vi.advanceTimersByTime(12 * 60 * 60 * 1000)
+    spy.mockReturnValue(now + 12 * 60 * 60 * 1000)
     expect(cache.get('key')).not.toBeNull()
 
     // Expired at 25 hours
-    vi.advanceTimersByTime(13 * 60 * 60 * 1000)
+    spy.mockReturnValue(now + 25 * 60 * 60 * 1000)
     expect(cache.get('key')).toBeNull()
 
-    vi.useRealTimers()
+    spy.mockRestore()
   })
 
   it('handles invalid JSON gracefully', () => {

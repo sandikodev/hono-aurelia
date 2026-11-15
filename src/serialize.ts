@@ -25,7 +25,7 @@ import type { RenderContext, HydrationPayload } from './types.js';
  */
 export async function serializeState(
   context: RenderContext,
-  initialData?: Record<string, any>,
+  initialData?: Record<string, unknown>,
   componentName?: string
 ): Promise<HydrationPayload> {
   try {
@@ -33,7 +33,9 @@ export async function serializeState(
     const cleanedContext = cleanContext(context);
 
     // Validate and clean initial data
-    const cleanedData = initialData ? cleanData(initialData) : undefined;
+    const cleanedData = initialData
+      ? (cleanData(initialData) as Record<string, unknown> | undefined)
+      : undefined;
 
     // Create hydration payload
     const payload: HydrationPayload = {
@@ -83,12 +85,12 @@ function cleanContext(context: RenderContext): RenderContext {
 
   // Clean user object
   if (result.user) {
-    result.user = cleanObject(result.user, SENSITIVE_FIELDS);
+    result.user = cleanObject(result.user, SENSITIVE_FIELDS) as RenderContext['user'];
   }
 
   // Clean workspace object
   if (result.workspace) {
-    result.workspace = cleanObject(result.workspace, SENSITIVE_FIELDS);
+    result.workspace = cleanObject(result.workspace, SENSITIVE_FIELDS) as RenderContext['workspace'];
   }
 
   return result;
@@ -98,9 +100,9 @@ function cleanContext(context: RenderContext): RenderContext {
  * Remove sensitive fields from object
  */
 function cleanObject(
-  obj: any,
+  obj: unknown,
   sensitiveFields: string[]
-): any {
+): unknown {
   if (obj === null || obj === undefined) {
     return obj;
   }
@@ -113,7 +115,7 @@ function cleanObject(
     return obj.map((item) => cleanObject(item, sensitiveFields));
   }
 
-  const cleaned: Record<string, any> = {};
+  const cleaned: Record<string, unknown> = {};
 
   for (const [key, value] of Object.entries(obj)) {
     // Check if field is sensitive (case-insensitive)
@@ -138,9 +140,9 @@ function cleanObject(
  * Recursively clean data, removing circular references
  */
 function cleanData(
-  data: any,
+  data: unknown,
   seen = new WeakSet()
-): any {
+): unknown {
   if (data === null || data === undefined) {
     return data;
   }
@@ -170,7 +172,7 @@ function cleanData(
 
   // Handle objects
   if (typeof data === 'object') {
-    const result: Record<string, any> = {};
+    const result: Record<string, unknown> = {};
 
     for (const [key, value] of Object.entries(data)) {
       // Skip private/internal properties

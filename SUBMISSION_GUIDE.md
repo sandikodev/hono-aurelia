@@ -161,7 +161,7 @@ We believe this benefits both ecosystems and would love to hear
 your thoughts.
 
 Best regards,
-Sandi Kodev
+Sandikodev (@sandikodev)
 ```
 
 ---

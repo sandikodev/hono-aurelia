@@ -3,6 +3,7 @@
   "version": "1.0.0-alpha.1",
   "description": "Server-side rendering adapter for Aurelia 2 on Hono",
   "type": "module",
+  "sideEffects": false,
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -11,10 +12,15 @@
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js",
+      "default": "./dist/server.js"
+    },
     "./client": {
-      "types": "./dist/hydrate.d.ts",
-      "import": "./dist/hydrate.js",
-      "default": "./dist/hydrate.js"
+      "types": "./dist/client.d.ts",
+      "import": "./dist/client.js",
+      "default": "./dist/client.js"
     }
   },
   "scripts": {
@@ -32,7 +38,7 @@
     "server-side-rendering",
     "fullstack"
   ],
-  "author": "Sandi Kodev <androxoss@hotmail.com>",
+  "author": "Sandikodev <androxoss@hotmail.com>",
   "license": "MIT",
   "peerDependencies": {
     "aurelia": "^2.0.0",

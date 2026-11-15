@@ -4,6 +4,8 @@
  * Core type definitions for server-side rendering Aurelia components on Hono.
  */
 
+import type { Context } from 'hono';
+
 /**
  * Authentication context passed from Hono middleware to renderer
  */
@@ -20,7 +22,7 @@ export interface User {
   id: string;
   email: string;
   name: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 /**
@@ -29,7 +31,7 @@ export interface User {
 export interface Workspace {
   id: string;
   name: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 /**
@@ -44,7 +46,7 @@ export interface HydrationPayload {
     role: string | null;
     isAuthenticated: boolean;
   };
-  initialData?: Record<string, any>;
+  initialData?: Record<string, unknown>;
   timestamp: number;
 }
 
@@ -52,7 +54,7 @@ export interface HydrationPayload {
  * Hydration result on client-side after extraction
  * Contains validated context and initial data
  */
-export interface HydrationResult<TData = Record<string, any>> {
+export interface HydrationResult<TData = Record<string, unknown>> {
   context: {
     user?: User;
     workspace?: Workspace;
@@ -67,11 +69,11 @@ export interface HydrationResult<TData = Record<string, any>> {
  * Options for renderAurelia()
  */
 export interface RenderOptions {
-  component: any;
+  component: unknown;
   context?: RenderContext;
-  props?: Record<string, any>;
+  props?: Record<string, unknown>;
   timeout?: number;
-  registrations?: any[];
+  registrations?: unknown[];
   settle?: number;
   url?: string;
 }
@@ -91,11 +93,11 @@ export interface DocumentOptions {
  * Route configuration for aurelia() adapter
  */
 export interface AureliaRouteConfig {
-  component: any;
+  component: unknown;
   title: string;
   requiresAuth?: boolean;
   loaders?: {
-    [key: string]: (c: any) => Promise<any>;
+    [key: string]: (c: Context) => Promise<unknown>;
   };
   fallback?: 'spa' | 'error';
   document?: DocumentOptions;

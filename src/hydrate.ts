@@ -5,20 +5,59 @@
  * Prevents hydration mismatches and duplicate API calls.
  */
 
-import type { HydrationPayload } from './types'
+import type { HydrationPayload, HydrationResult } from './types.js'
+
+export type { HydrationResult }
 
 /**
- * Hydration result containing context and initial data
+ * Ensure a minimal Storage implementation exists when running in SSR/Node environments
+ * where `sessionStorage` is not natively provided on `globalThis`.
  */
-export interface HydrationResult<TData = Record<string, any>> {
-  context: {
-    user?: any
-    workspace?: any
-    role?: any
-    isAuthenticated: boolean
+function ensureSessionStorage(): Storage {
+  if (typeof globalThis.sessionStorage !== 'undefined') {
+    return globalThis.sessionStorage
   }
-  initialData?: TData
-  timestamp: number
+
+  const store: Record<string, string> = {}
+  const memoryStorage = new Proxy(store, {
+    get(target, prop: string | symbol) {
+      if (prop === 'getItem') {
+        return (key: string) => (Object.prototype.hasOwnProperty.call(target, key) ? target[key] : null)
+      }
+      if (prop === 'setItem') {
+        return (key: string, value: string) => {
+          target[key] = String(value)
+        }
+      }
+      if (prop === 'removeItem') {
+        return (key: string) => {
+          delete target[key]
+        }
+      }
+      if (prop === 'clear') {
+        return () => {
+          for (const k of Object.keys(target)) {
+            delete target[k]
+          }
+        }
+      }
+      if (prop === 'key') {
+        return (index: number) => Object.keys(target)[index] ?? null
+      }
+      if (prop === 'length') {
+        return Object.keys(target).length
+      }
+      return target[prop as string]
+    },
+  }) as unknown as Storage
+
+  Object.defineProperty(globalThis, 'sessionStorage', {
+    value: memoryStorage,
+    configurable: true,
+    writable: true,
+  })
+
+  return memoryStorage
 }
 
 /**
@@ -203,17 +242,21 @@ export class HydrationCache {
   private prefix = 'hydration:'
   private ttl = 24 * 60 * 60 * 1000 // 24 hours
 
+  constructor() {
+    ensureSessionStorage()
+  }
+
   /**
    * Store data in cache
    */
-  set(key: string, value: any, ttlMs?: number): void {
+  set<T = unknown>(key: string, value: T, ttlMs?: number): void {
     const fullKey = this.prefix + key
     const entry = {
       value,
       expiresAt: Date.now() + (ttlMs ?? this.ttl),
     }
     try {
-      sessionStorage.setItem(fullKey, JSON.stringify(entry))
+      ensureSessionStorage().setItem(fullKey, JSON.stringify(entry))
     } catch (error) {
       // sessionStorage might be unavailable in some contexts
       console.warn('HydrationCache: Unable to store in sessionStorage', error)
@@ -225,13 +268,13 @@ export class HydrationCache {
    * 
    * Returns null if key doesn't exist, expired, or invalid.
    */
-  get(key: string): any | null {
+  get<T = unknown>(key: string): T | null {
     const fullKey = this.prefix + key
     try {
-      const item = sessionStorage.getItem(fullKey)
+      const item = ensureSessionStorage().getItem(fullKey)
       if (!item) return null
 
-      const entry = JSON.parse(item)
+      const entry = JSON.parse(item) as { value: T; expiresAt: number }
       
       // Check if expired
       if (entry.expiresAt < Date.now()) {
@@ -259,7 +302,7 @@ export class HydrationCache {
   delete(key: string): void {
     const fullKey = this.prefix + key
     try {
-      sessionStorage.removeItem(fullKey)
+      ensureSessionStorage().removeItem(fullKey)
     } catch {
       // sessionStorage might be unavailable
     }
@@ -270,10 +313,11 @@ export class HydrationCache {
    */
   clear(): void {
     try {
-      const keys = Object.keys(sessionStorage)
+      const storage = ensureSessionStorage()
+      const keys = Object.keys(storage)
       for (const key of keys) {
         if (key.startsWith(this.prefix)) {
-          sessionStorage.removeItem(key)
+          storage.removeItem(key)
         }
       }
     } catch {

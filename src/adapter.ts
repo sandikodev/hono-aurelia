@@ -116,9 +116,9 @@ function extractRenderContext(c: Context): RenderContext {
  * @internal
  */
 async function executeLoaders(
-  loaders: Record<string, (c: any) => Promise<any>> | undefined,
+  loaders: Record<string, (c: Context) => Promise<unknown>> | undefined,
   c: Context
-): Promise<Record<string, any>> {
+): Promise<Record<string, unknown>> {
   if (!loaders || Object.keys(loaders).length === 0) {
     return {};
   }
@@ -135,7 +135,7 @@ async function executeLoaders(
     })
   );
 
-  const data: Record<string, any> = {};
+  const data: Record<string, unknown> = {};
   
   for (const result of results) {
     if (result.status === 'fulfilled') {
@@ -198,7 +198,7 @@ export function aurelia(config: AureliaRouteConfig) {
       const { preferredType, isHtml, isJson } = negotiateContent(acceptHeader);
 
       // === PHASE 3: DATA LOADING ===
-      let initialData: Record<string, any> = {};
+      let initialData: Record<string, unknown> = {};
       
       if (config.loaders) {
         try {
@@ -220,10 +220,18 @@ export function aurelia(config: AureliaRouteConfig) {
         }
       }
 
+      const componentName =
+        (typeof config.component === 'function' || (typeof config.component === 'object' && config.component !== null)) &&
+        'name' in config.component &&
+        typeof (config.component as { name?: unknown }).name === 'string' &&
+        (config.component as { name: string }).name
+          ? (config.component as { name: string }).name
+          : 'Page';
+
       // === PHASE 4: JSON RESPONSE ===
       if (preferredType === 'json' && isJson) {
         return c.json({
-          component: config.component.name || 'Page',
+          component: componentName,
           context: {
             ...context,
             isAuthenticated,
@@ -270,7 +278,7 @@ export function aurelia(config: AureliaRouteConfig) {
       const payload = await serializeState(
         context,
         initialData,
-        config.component.name || 'Page'
+        componentName
       );
 
       // Create full HTML document
@@ -310,9 +318,9 @@ export function aurelia(config: AureliaRouteConfig) {
  * ```
  */
 export interface AuthMiddlewareConfig {
-  getUserFromToken?: (token: string) => Promise<any>;
-  getWorkspaceFromRequest?: (c: Context) => Promise<any>;
-  getRoleForUser?: (user: any, workspace: any) => string | null;
+  getUserFromToken?: (token: string) => Promise<unknown>;
+  getWorkspaceFromRequest?: (c: Context) => Promise<unknown>;
+  getRoleForUser?: (user: unknown, workspace: unknown) => string | null;
 }
 
 /**
@@ -321,14 +329,14 @@ export interface AuthMiddlewareConfig {
  * @internal This is optional — developers can implement their own auth
  */
 export function createAuthMiddleware(config: AuthMiddlewareConfig) {
-  return async (c: Context, next: any) => {
+  return async (c: Context, next: () => Promise<void>) => {
     // Extract token from Authorization header, query parameter, or cookie
     const authHeader = c.req.header('Authorization');
     const token = authHeader?.replace(/^Bearer\s+/i, '') || c.req.query('token');
 
-    let user = null;
-    let workspace = null;
-    let role = null;
+    let user: unknown = null;
+    let workspace: unknown = null;
+    let role: string | null = null;
 
     // Load user from token
     if (token && config.getUserFromToken) {
@@ -382,7 +390,7 @@ export function createAuthMiddleware(config: AuthMiddlewareConfig) {
  */
 export function createAureliaRouteGroup(defaults: Partial<AureliaRouteConfig>) {
   return {
-    handler: (component: any, title: string, overrides?: Partial<AureliaRouteConfig>) => {
+    handler: (component: unknown, title: string, overrides?: Partial<AureliaRouteConfig>) => {
       return aurelia({
         ...defaults,
         component,
