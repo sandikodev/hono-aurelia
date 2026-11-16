@@ -275,6 +275,7 @@ export function aurelia(
             const data = await executeLoaders(comp.loaders as Record<string, (c: Context) => Promise<unknown>>, c);
             Object.assign(initialData, data);
           } catch (error) {
+            console.error('Co-located loaders failed:', error);
             if (config.fallback === 'error') {
               return c.html(
                 createErrorHtml(500, 'Failed to load page data', 'Please try refreshing the page'),
