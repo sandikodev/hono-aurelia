@@ -159,17 +159,17 @@ async function executeLoaders(
  * 
  * Creates a Hono middleware function that:
  * 1. Checks authentication (if requiresAuth)
- * 2. Executes data loaders
+ * 2. Executes co-located or configured data loaders
  * 3. Renders Aurelia component on server
  * 4. Negotiates response format (HTML vs JSON)
  * 5. Returns HTML document or JSON payload
  * 
- * @param config - Route configuration
- * @returns Hono middleware function
- * 
- * @example
+ * Supports both full configuration object and ergonomic shorthand:
  * ```typescript
- * // HTML response (default)
+ * // Shorthand with co-located loaders and optional title
+ * app.get('/posts/:slug', aurelia(PostDetailPage, 'Post Detail'));
+ * 
+ * // Full configuration object
  * app.get('/dashboard', aurelia({
  *   component: DashboardPage,
  *   title: 'Dashboard',
@@ -178,13 +178,60 @@ async function executeLoaders(
  *     stats: async (c) => fetch('/api/stats').then(r => r.json())
  *   }
  * }));
- * 
- * // JSON response (for API consumers)
- * // GET /dashboard with Accept: application/json
- * // Returns: { context, initialData, timestamp, component }
  * ```
  */
-export function aurelia(config: AureliaRouteConfig) {
+export function aurelia(
+  config: AureliaRouteConfig
+): (c: Context) => Promise<Response>;
+export function aurelia(
+  component: unknown,
+  title?: string
+): (c: Context) => Promise<Response>;
+export function aurelia(
+  configOrComponent: AureliaRouteConfig | unknown,
+  maybeTitle?: string
+): (c: Context) => Promise<Response> {
+  // Normalize config
+  let config: AureliaRouteConfig;
+  const isPlainConfig =
+    Boolean(configOrComponent) &&
+    typeof configOrComponent === 'object' &&
+    'component' in (configOrComponent as Record<string, unknown>);
+
+  if (isPlainConfig) {
+    config = { ...(configOrComponent as AureliaRouteConfig) };
+  } else {
+    config = {
+      component: configOrComponent,
+      title: maybeTitle,
+    };
+  }
+
+  const comp = config.component as (Record<string, unknown> & { name?: string }) | null | undefined;
+
+  // Infer title from static component property if omitted
+  if (!config.title && comp) {
+    if (typeof comp.title === 'string') {
+      config.title = comp.title;
+    } else if (typeof comp.name === 'string' && comp.name) {
+      config.title = comp.name;
+    } else {
+      config.title = 'Aurelia App';
+    }
+  } else if (!config.title) {
+    config.title = 'Aurelia App';
+  }
+
+  // Infer requiresAuth from static component property if omitted
+  if (config.requiresAuth === undefined && comp && typeof comp.requiresAuth === 'boolean') {
+    config.requiresAuth = comp.requiresAuth;
+  }
+
+  // Infer fallback from static component property if omitted
+  if (config.fallback === undefined && comp && (comp.fallback === 'spa' || comp.fallback === 'error')) {
+    config.fallback = comp.fallback as 'spa' | 'error';
+  }
+
   return async (c: Context) => {
     try {
       // === PHASE 1: AUTH GUARD ===
@@ -204,10 +251,45 @@ export function aurelia(config: AureliaRouteConfig) {
 
       // === PHASE 3: DATA LOADING ===
       let initialData: Record<string, unknown> = {};
-      
+
+      // 1. Co-located static loaders on component class
+      if (comp) {
+        if (typeof comp.loader === 'function') {
+          try {
+            const result = await (comp.loader as (c: Context) => Promise<unknown>)(c);
+            if (result && typeof result === 'object') {
+              Object.assign(initialData, result);
+            }
+          } catch (error) {
+            console.error('Co-located loader failed:', error);
+            if (config.fallback === 'error') {
+              return c.html(
+                createErrorHtml(500, 'Failed to load page data', 'Please try refreshing the page'),
+                { status: 500 }
+              );
+            }
+          }
+        }
+        if (comp.loaders && typeof comp.loaders === 'object') {
+          try {
+            const data = await executeLoaders(comp.loaders as Record<string, (c: Context) => Promise<unknown>>, c);
+            Object.assign(initialData, data);
+          } catch (error) {
+            if (config.fallback === 'error') {
+              return c.html(
+                createErrorHtml(500, 'Failed to load page data', 'Please try refreshing the page'),
+                { status: 500 }
+              );
+            }
+          }
+        }
+      }
+
+      // 2. Explicit config.loaders overrides/augments co-located loaders
       if (config.loaders) {
         try {
-          initialData = await executeLoaders(config.loaders, c);
+          const loaded = await executeLoaders(config.loaders, c);
+          Object.assign(initialData, loaded);
         } catch (error) {
           // If loaders fail, decide based on fallback strategy
           if (config.fallback === 'error') {
@@ -225,13 +307,14 @@ export function aurelia(config: AureliaRouteConfig) {
         }
       }
 
-      const componentName =
-        (typeof config.component === 'function' || (typeof config.component === 'object' && config.component !== null)) &&
-        'name' in config.component &&
-        typeof (config.component as { name?: unknown }).name === 'string' &&
-        (config.component as { name: string }).name
-          ? (config.component as { name: string }).name
-          : 'Page';
+      let componentName = 'Page';
+      if (comp) {
+        if (typeof comp.name === 'string' && comp.name) {
+          componentName = comp.name;
+        } else if (typeof config.component === 'function' && config.component.name) {
+          componentName = config.component.name;
+        }
+      }
 
       // === PHASE 4: JSON RESPONSE ===
       if (preferredType === 'json' && isJson) {

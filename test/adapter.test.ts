@@ -631,4 +631,73 @@ describe('integration scenarios', () => {
     expect(text).toContain('</body>');
     expect(text).toContain('</html>');
   });
+
+  describe('co-located route loaders & ergonomic shorthand', () => {
+    it('supports aurelia(Component, "Title") direct signature', async () => {
+      const app = new Hono();
+      app.get('/shorthand', aurelia(MockComponent, 'Shorthand Page'));
+
+      const res = await app.request('/shorthand', {
+        headers: { Accept: 'text/html' },
+      });
+
+      expect(res.status).toBe(200);
+      const text = await res.text();
+      expect(text).toContain('Shorthand Page');
+      expect(text).toContain('Mock Content');
+    });
+
+    it('executes static async loader(c) co-located on component class', async () => {
+      class ArticleDetailPage {
+        static name = 'ArticleDetail';
+        static title = 'Article Detail';
+        static async loader(c: any) {
+          const slug = c.req.param('slug');
+          return {
+            article: { slug, title: `Article for ${slug}` },
+          };
+        }
+      }
+
+      const app = new Hono();
+      app.get('/articles/:slug', aurelia(ArticleDetailPage));
+
+      // Test JSON content negotiation
+      const jsonRes = await app.request('/articles/deep-dive', {
+        headers: { Accept: 'application/json' },
+      });
+
+      expect(jsonRes.status).toBe(200);
+      const data = await jsonRes.json() as any;
+      expect(data.component).toBe('ArticleDetail');
+      expect(data.initialData.article).toEqual({
+        slug: 'deep-dive',
+        title: 'Article for deep-dive',
+      });
+
+      // Test HTML hydration payload inclusion
+      const htmlRes = await app.request('/articles/deep-dive', {
+        headers: { Accept: 'text/html' },
+      });
+      const html = await htmlRes.text();
+      expect(html).toContain('Article Detail');
+      expect(html).toContain('deep-dive');
+    });
+
+    it('respects static requiresAuth = true on component class', async () => {
+      class SecureSettingsPage {
+        static name = 'SecureSettings';
+        static requiresAuth = true;
+      }
+
+      const app = new Hono();
+      app.get('/settings', aurelia(SecureSettingsPage));
+
+      // Unauthenticated request should yield 401
+      const res = await app.request('/settings');
+      expect(res.status).toBe(401);
+      const body = await res.json() as any;
+      expect(body.error).toBe('Unauthorized');
+    });
+  });
 });

@@ -26,7 +26,7 @@ export type {
  */
 export interface AureliaRouteConfig {
   component: unknown;
-  title: string;
+  title?: string;
   requiresAuth?: boolean;
   loaders?: {
     [key: string]: (c: Context) => Promise<unknown>;
@@ -34,6 +34,20 @@ export interface AureliaRouteConfig {
   fallback?: 'spa' | 'error';
   document?: DocumentOptions;
   streaming?: boolean;
+}
+
+/**
+ * Aurelia Component with optional co-located route metadata and loaders
+ */
+export interface AureliaComponentWithMetadata {
+  name?: string;
+  title?: string;
+  requiresAuth?: boolean;
+  loader?: (c: Context) => Promise<Record<string, unknown> | unknown>;
+  loaders?: Record<string, (c: Context) => Promise<unknown>>;
+  fallback?: 'spa' | 'error';
+  clientOnly?: boolean;
+  serverOnly?: boolean;
 }
 
 /**
