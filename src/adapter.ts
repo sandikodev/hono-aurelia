@@ -26,10 +26,15 @@
  */
 
 import type { Context } from 'hono';
-import { renderAurelia } from './render.js';
-import { serializeState } from './serialize.js';
-import { createHtmlDocument, createErrorHtml, createFallbackHtml } from './html.js';
-import type { AureliaRouteConfig, RenderContext } from './types.js';
+import {
+  renderAurelia,
+  serializeState,
+  createHtmlDocument,
+  createErrorHtml,
+  createFallbackHtml,
+  type RenderContext,
+} from '@aureliajs/ssr';
+import type { AureliaRouteConfig } from './types.js';
 
 /**
  * Content negotiation result
