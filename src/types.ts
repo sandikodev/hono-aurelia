@@ -66,6 +66,21 @@ export interface HydrationResult<TData = Record<string, unknown>> {
 }
 
 /**
+ * Isomorphic Request Context interface accessible via Aurelia DI (resolve(IRequestContext))
+ * across both server-side SSR and client-side hydration.
+ */
+export interface IRequestContext<TUser = User, TWorkspace = Workspace> {
+  readonly user: TUser | null;
+  readonly workspace: TWorkspace | null;
+  readonly role: string | null;
+  readonly url: string;
+  readonly params: Record<string, string>;
+  readonly query: Record<string, string>;
+  readonly isServer: boolean;
+  readonly isClient: boolean;
+}
+
+/**
  * Options for renderAurelia()
  */
 export interface RenderOptions {
@@ -76,6 +91,8 @@ export interface RenderOptions {
   registrations?: unknown[];
   settle?: number;
   url?: string;
+  params?: Record<string, string>;
+  query?: Record<string, string>;
 }
 
 /**
@@ -103,6 +120,20 @@ export interface AureliaRouteConfig {
   };
   fallback?: 'spa' | 'error';
   document?: DocumentOptions;
+  streaming?: boolean;
+}
+
+/**
+ * Options for client-side automated component hydration (createClientHydrator)
+ */
+export interface ClientHydratorOptions {
+  components: Record<string, unknown>;
+  target?: string | HTMLElement;
+  fallback?: unknown;
+  registrations?: unknown[];
+  payloadKey?: string;
+  onHydrated?: (componentName: string, instance: unknown) => void;
+  onError?: (error: unknown) => void;
 }
 
 /**

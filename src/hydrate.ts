@@ -5,9 +5,11 @@
  * Prevents hydration mismatches and duplicate API calls.
  */
 
-import type { HydrationPayload, HydrationResult } from './types.js'
+import type { HydrationPayload, HydrationResult, ClientHydratorOptions, IRequestContext } from './types.js';
+import { Aurelia, Registration, type Constructable } from 'aurelia';
+import { IRequestContext as IRequestContextToken } from './tokens.js';
 
-export type { HydrationResult }
+export type { HydrationResult, ClientHydratorOptions };
 
 /**
  * Ensure a minimal Storage implementation exists when running in SSR/Node environments
@@ -330,3 +332,92 @@ export class HydrationCache {
  * Shared cache instance
  */
 export const hydrationCache = new HydrationCache()
+
+/**
+ * Automated Client-Side Hydration Bootstrapper
+ * 
+ * Inspects hydration payload, dynamically maps the component name against
+ * registered components, registers IRequestContext into DI, and starts Aurelia.
+ */
+export async function createClientHydrator(options: ClientHydratorOptions): Promise<unknown> {
+  if (typeof window === 'undefined') return null;
+
+  // Peek component name before hydrateFromServer consumes and deletes it
+  const rawPayload = peekHydrationPayload(options.payloadKey);
+  const componentName = rawPayload?.component;
+
+  const hydration = hydrateFromServer({ payloadKey: options.payloadKey });
+
+  const targetSelector = typeof options.target === 'string' ? options.target : 'app-root';
+  let host: HTMLElement | null = null;
+  if (typeof options.target === 'object' && options.target !== null && 'nodeType' in (options.target as Node)) {
+    host = options.target as HTMLElement;
+  } else {
+    host = document.querySelector<HTMLElement>(targetSelector) || document.getElementById(targetSelector.replace(/^#/, ''));
+  }
+
+  if (!host) {
+    const error = new Error(`[createClientHydrator] Target element "${targetSelector}" not found in DOM.`);
+    options.onError?.(error);
+    return null;
+  }
+
+  let ComponentClass: unknown = componentName ? options.components[componentName] : undefined;
+  if (!ComponentClass && componentName) {
+    // Try normalized match (kebab-case vs PascalCase)
+    const normalizedTarget = componentName.replace(/[-_]/g, '').toLowerCase();
+    for (const [key, comp] of Object.entries(options.components)) {
+      if (key.replace(/[-_]/g, '').toLowerCase() === normalizedTarget) {
+        ComponentClass = comp;
+        break;
+      }
+    }
+  }
+
+  if (!ComponentClass) {
+    ComponentClass = options.fallback;
+  }
+
+  if (!ComponentClass) {
+    const error = new Error(
+      `[createClientHydrator] No matching component registered for "${componentName}". Available: ${Object.keys(options.components).join(', ')}`
+    );
+    options.onError?.(error);
+    return null;
+  }
+
+  let rootInstance: object;
+  if (typeof ComponentClass === 'function') {
+    rootInstance = new (ComponentClass as Constructable)(hydration?.initialData);
+  } else {
+    rootInstance = { ...(ComponentClass as object), ...hydration?.initialData };
+  }
+
+  try {
+    const app = new Aurelia();
+
+    // Register isomorphic request context into client container
+    const clientReqContext: IRequestContext = {
+      user: hydration?.context?.user ?? null,
+      workspace: hydration?.context?.workspace ?? null,
+      role: hydration?.context?.role ?? null,
+      url: window.location.href,
+      params: {},
+      query: Object.fromEntries(new URLSearchParams(window.location.search)),
+      isServer: false,
+      isClient: true,
+    };
+    app.register(Registration.instance(IRequestContextToken, clientReqContext));
+
+    if (options.registrations && Array.isArray(options.registrations)) {
+      app.register(...options.registrations);
+    }
+
+    await app.app({ host, component: rootInstance }).start();
+    options.onHydrated?.(componentName || 'App', rootInstance);
+    return rootInstance;
+  } catch (err) {
+    options.onError?.(err);
+    throw err;
+  }
+}

@@ -333,6 +333,75 @@ describe('hydrationCache singleton', () => {
   })
 })
 
+describe('createClientHydrator', () => {
+  it('automatically resolves and mounts registered component', async () => {
+    const { JSDOM } = await import('jsdom');
+    const dom = new JSDOM('<!DOCTYPE html><html><body><app-root></app-root></body></html>', {
+      url: 'http://localhost/',
+    });
+    const domProps = ['window', 'document', 'Node', 'Element', 'HTMLElement', 'CustomEvent', 'Event', 'HTMLTemplateElement'];
+    const origProps: Record<string, any> = {};
+    const { PLATFORM } = await import('aurelia');
+    const p = PLATFORM as unknown as Record<string, unknown>;
+
+    for (const prop of domProps) {
+      origProps[prop] = (globalThis as any)[prop];
+      (globalThis as any)[prop] = (dom.window as any)[prop];
+      if (p && prop in p) {
+        origProps[`p_${prop}`] = p[prop];
+        p[prop] = (dom.window as any)[prop];
+      }
+    }
+
+    try {
+      const { CustomElement } = await import('aurelia');
+      const { createClientHydrator } = await import('../src/hydrate.js');
+
+      const host = dom.window.document.querySelector('app-root')!;
+
+      const payload = {
+        component: 'CounterWidget',
+        context: { user: { id: 'u1', name: 'Sandiko', email: 's@dev.io' }, workspace: null, role: 'admin' },
+        initialData: { count: 99 },
+        timestamp: Date.now(),
+      };
+      (dom.window as any).__HYDRATION__ = payload;
+      (globalThis as any).__HYDRATION__ = payload;
+
+      let hydratedName = '';
+      const CounterWidget = CustomElement.define({
+        name: 'counter-widget',
+        template: '<div>Count: ${count}</div>',
+      }, class {
+        count = 0;
+        constructor(data?: any) {
+          if (data?.count) this.count = data.count;
+        }
+      });
+
+      await createClientHydrator({
+        components: { CounterWidget },
+        target: host as any,
+        onHydrated: (name) => { hydratedName = name; },
+      });
+
+      expect(hydratedName).toBe('CounterWidget');
+      expect(host.innerHTML).toContain('Count: 99');
+    } finally {
+      for (const prop of domProps) {
+        if (origProps[prop] !== undefined) {
+          (globalThis as any)[prop] = origProps[prop];
+        } else {
+          delete (globalThis as any)[prop];
+        }
+        if (origProps[`p_${prop}`] !== undefined) {
+          p[prop] = origProps[`p_${prop}`];
+        }
+      }
+    }
+  });
+})
+
 // ============= Helper Functions =============
 
 function createPayload(overrides?: Partial<HydrationPayload>): HydrationPayload {

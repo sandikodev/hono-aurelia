@@ -25,6 +25,7 @@
 
 // Public API - Server-side
 export { renderAurelia } from './render.js';
+export { IRequestContext } from './tokens.js';
 export { serializeState, validatePayload, stringifyPayload } from './serialize.js';
 export {
   createHtmlDocument,
@@ -51,6 +52,7 @@ export {
   clearHydration,
   HydrationCache,
   hydrationCache,
+  createClientHydrator,
 } from './hydrate.js';
 
 // Types
@@ -64,6 +66,8 @@ export type {
   AureliaRouteConfig,
   HydrationOptions,
   HydrationResult,
+  ClientHydratorOptions,
+  IRequestContext as IRequestContextType,
 } from './types.js';
 
 // Version

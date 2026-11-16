@@ -247,13 +247,16 @@ export function aurelia(config: AureliaRouteConfig) {
         return c.text('Not Acceptable', { status: 406 });
       }
 
-      // Render component on server
+      // Render component on server with full request parameters
       let html: string;
       try {
         html = await renderAurelia({
           component: config.component,
           context,
           props: initialData,
+          url: c.req.url,
+          params: c.req.param(),
+          query: c.req.query(),
         });
       } catch (error) {
         console.error('Rendering failed:', error);
@@ -281,7 +284,30 @@ export function aurelia(config: AureliaRouteConfig) {
         componentName
       );
 
-      // Create full HTML document
+      // Streaming response mode for near-zero TTFB
+      if (config.streaming) {
+        const marker = '<!--__SSR_STREAM_SPLIT__-->';
+        const templateDoc = createHtmlDocument(marker, payload, {
+          title: config.title,
+          ...config.document,
+        });
+        const [preamble, postamble] = templateDoc.split(marker);
+        const encoder = new TextEncoder();
+        const stream = new ReadableStream({
+          start(controller) {
+            controller.enqueue(encoder.encode(preamble ?? ''));
+            controller.enqueue(encoder.encode(html));
+            controller.enqueue(encoder.encode(postamble ?? ''));
+            controller.close();
+          },
+        });
+        return c.body(stream, 200, {
+          'Content-Type': 'text/html; charset=utf-8',
+          'Transfer-Encoding': 'chunked',
+        });
+      }
+
+      // Standard buffered HTML document
       const document = createHtmlDocument(html, payload, {
         title: config.title,
         ...config.document,

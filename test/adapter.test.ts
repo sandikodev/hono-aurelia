@@ -607,4 +607,28 @@ describe('integration scenarios', () => {
 
     expect(app).toBeDefined();
   });
+
+  it('supports streaming SSR with chunked transfer response', async () => {
+    const app = new Hono();
+    app.get(
+      '/stream-test',
+      aurelia({
+        component: MockComponent,
+        title: 'Streaming Page',
+        streaming: true,
+      })
+    );
+
+    const res = await app.request('/stream-test', {
+      headers: { Accept: 'text/html' },
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('text/html');
+    const text = await res.text();
+    expect(text).toContain('<!DOCTYPE html>');
+    expect(text).toContain('Streaming Page');
+    expect(text).toContain('</body>');
+    expect(text).toContain('</html>');
+  });
 });

@@ -1,7 +1,7 @@
 /**
- * @hono/aurelia-ssr Renderer
+ * @aureliajs/ssr Renderer
  * 
- * Production-grade Server-Side Rendering engine for Aurelia 2 on Hono.
+ * Production-grade Server-Side Rendering engine for Aurelia 2.
  * Boots real Aurelia 2 components in an isolated server DOM environment with
  * concurrency mutex locks, environment snapshot/restore, and memory-safe caching.
  */
@@ -19,11 +19,14 @@ import {
   type Constructable,
 } from 'aurelia';
 import type { RenderOptions, RenderContext } from './types.js';
+import { IRequestContext } from './tokens.js';
 
 interface ISSRContext {
   readonly preserveMarkers: boolean;
 }
 const ISSRContext = /*@__PURE__*/ DI.createInterface<ISSRContext>('ISSRContext');
+
+export { IRequestContext };
 
 /**
  * Single-process FIFO mutex to prevent concurrent SSR requests from clobbering
@@ -375,84 +378,96 @@ async function performAureliaRender(
     template = template.replace(/\{\{([^}]+)\}\}/g, '${$1}');
   }
 
-  let rootComponent: Constructable | object;
-
-  if (CustomElement.isType(component)) {
-    // If component is a defined CustomElement class, instantiate directly
-    const instance = new (component as Constructable)() as Record<string, unknown>;
-    instance._renderContext = context;
-    instance.user = context.user;
-    instance.workspace = context.workspace;
-    instance.role = context.role;
-    Object.assign(instance, props);
-    rootComponent = instance;
-  } else if (typeof component === 'function') {
-    // Plain class (not decorated with CustomElement)
-    let Wrapper = plainWrapperCache.get(component as object);
-    if (!Wrapper) {
-      Wrapper = CustomElement.define(
-        {
-          name: `ssr-class-wrapper-${++plainWrapperCounter}`,
-          template: template || '<div></div>',
-        },
-        component as Constructable
-      );
-      plainWrapperCache.set(component as object, Wrapper);
-    }
-    const instance = new Wrapper() as Record<string, unknown>;
-    instance._renderContext = context;
-    instance.user = context.user;
-    instance.workspace = context.workspace;
-    instance.role = context.role;
-    Object.assign(instance, props);
-    rootComponent = instance;
-  } else if (typeof component === 'object' && component !== null) {
-    // Plain object component: { template: '...', ...props }
-    let Wrapper = plainWrapperCache.get(component);
-    if (!Wrapper) {
-      const plainObj = component as Record<string, unknown> & { template?: string };
-      class PlainObjWrapper {
-        constructor() {
-          Object.assign(this, plainObj);
-        }
-      }
-      // If plainObj has methods (e.g. attached, binding), copy to prototype
-      for (const key of Object.getOwnPropertyNames(plainObj)) {
-        if (typeof plainObj[key] === 'function' && key !== 'constructor') {
-          (PlainObjWrapper.prototype as Record<string, unknown>)[key] = plainObj[key];
-        }
-      }
-      Wrapper = CustomElement.define(
-        {
-          name: `ssr-obj-wrapper-${++plainWrapperCounter}`,
-          template: template || plainObj.template || '<div></div>',
-        },
-        PlainObjWrapper
-      );
-      plainWrapperCache.set(component, Wrapper);
-    }
-    const instance = new Wrapper() as Record<string, unknown>;
-    instance._renderContext = context;
-    instance.user = context.user;
-    instance.workspace = context.workspace;
-    instance.role = context.role;
-    Object.assign(instance, props);
-    rootComponent = instance;
-  } else {
-    throw new Error('renderAurelia: component is invalid');
-  }
-
-  // Initialize Aurelia with request-scoped template element factory and SSR marker preservation
+  // Initialize Aurelia with request-scoped template element factory, SSR markers, and isomorphic request context
   const app = new Aurelia();
   try {
+    const requestContext: IRequestContext = {
+      user: context.user ?? null,
+      workspace: context.workspace ?? null,
+      role: context.role ?? null,
+      url: options.url || 'http://localhost/',
+      params: options.params || {},
+      query: options.query || {},
+      isServer: true,
+      isClient: false,
+    };
+
     app.register(
       Registration.singleton(ITemplateElementFactory, SsrTemplateElementFactory),
-      Registration.instance(ISSRContext, { preserveMarkers: true })
+      Registration.instance(ISSRContext, { preserveMarkers: true }),
+      Registration.instance(IRequestContext, requestContext)
     );
 
     // Register additional registrations if provided
     if (options.registrations && Array.isArray(options.registrations)) {
       app.register(...options.registrations);
+    }
+
+    let rootComponent: Constructable | object;
+
+    if (CustomElement.isType(component)) {
+      // If component is a defined CustomElement class, resolve via container to enable DI (resolve())
+      const instance = app.container.get(component as Constructable) as Record<string, unknown>;
+      instance._renderContext = context;
+      instance.user = context.user;
+      instance.workspace = context.workspace;
+      instance.role = context.role;
+      Object.assign(instance, props);
+      rootComponent = instance;
+    } else if (typeof component === 'function') {
+      // Plain class (not decorated with CustomElement)
+      let Wrapper = plainWrapperCache.get(component as object);
+      if (!Wrapper) {
+        Wrapper = CustomElement.define(
+          {
+            name: `ssr-class-wrapper-${++plainWrapperCounter}`,
+            template: template || '<div></div>',
+          },
+          component as Constructable
+        );
+        plainWrapperCache.set(component as object, Wrapper);
+      }
+      const instance = app.container.get(Wrapper) as Record<string, unknown>;
+      instance._renderContext = context;
+      instance.user = context.user;
+      instance.workspace = context.workspace;
+      instance.role = context.role;
+      Object.assign(instance, props);
+      rootComponent = instance;
+    } else if (typeof component === 'object' && component !== null) {
+      // Plain object component: { template: '...', ...props }
+      let Wrapper = plainWrapperCache.get(component);
+      if (!Wrapper) {
+        const plainObj = component as Record<string, unknown> & { template?: string };
+        class PlainObjWrapper {
+          constructor() {
+            Object.assign(this, plainObj);
+          }
+        }
+        // If plainObj has methods (e.g. attached, binding), copy to prototype
+        for (const key of Object.getOwnPropertyNames(plainObj)) {
+          if (typeof plainObj[key] === 'function' && key !== 'constructor') {
+            (PlainObjWrapper.prototype as Record<string, unknown>)[key] = plainObj[key];
+          }
+        }
+        Wrapper = CustomElement.define(
+          {
+            name: `ssr-obj-wrapper-${++plainWrapperCounter}`,
+            template: template || plainObj.template || '<div></div>',
+          },
+          PlainObjWrapper
+        );
+        plainWrapperCache.set(component, Wrapper);
+      }
+      const instance = app.container.get(Wrapper) as Record<string, unknown>;
+      instance._renderContext = context;
+      instance.user = context.user;
+      instance.workspace = context.workspace;
+      instance.role = context.role;
+      Object.assign(instance, props);
+      rootComponent = instance;
+    } else {
+      throw new Error('renderAurelia: component is invalid');
     }
 
     const host = win.document.getElementById('ssr-root');
@@ -485,6 +500,11 @@ async function performAureliaRender(
 }
 
 /**
+ * Universal alias for renderAurelia conforming to standard React/Vue SSR conventions.
+ */
+export { renderAurelia as renderToString };
+
+/**
  * Escape HTML special characters
  */
 function escapeHtml(text: string): string {
@@ -495,5 +515,5 @@ function escapeHtml(text: string): string {
     '"': '&quot;',
     "'": '&#039;',
   };
-  return text.replace(/[&<>"']/g, (char) => map[char]);
+  return text.replace(/[&<>"']/g, (char) => map[char] ?? char);
 }
