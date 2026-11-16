@@ -51,6 +51,24 @@ export interface AureliaComponentWithMetadata {
 }
 
 /**
+ * Configuration for aureliaDefaults() middleware
+ */
+export interface AureliaDefaultsOptions {
+  document?: DocumentOptions;
+  streaming?: boolean;
+  fallback?: 'spa' | 'error';
+}
+
+/**
+ * Options for serveAureliaAssets() static asset middleware
+ */
+export interface ServeAssetsOptions {
+  root: string;
+  prefix?: string;
+  maxAge?: number;
+}
+
+/**
  * Configuration for createAuthMiddleware()
  */
 export interface AuthMiddlewareConfig {

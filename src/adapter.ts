@@ -26,6 +26,8 @@
  */
 
 import type { Context } from 'hono';
+import { resolve as pathResolve, normalize as pathNormalize } from 'node:path';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import {
   renderAurelia,
   serializeState,
@@ -34,7 +36,110 @@ import {
   createFallbackHtml,
   type RenderContext,
 } from '@aureliajs/ssr';
-import type { AureliaRouteConfig } from './types.js';
+import type {
+  AureliaRouteConfig,
+  AureliaDefaultsOptions,
+  ServeAssetsOptions,
+} from './types.js';
+
+let globalAureliaDefaults: AureliaDefaultsOptions = {};
+
+/**
+ * Configure global defaults for all aurelia() route handlers in the application.
+ */
+export function setAureliaDefaults(defaults: AureliaDefaultsOptions): void {
+  globalAureliaDefaults = { ...globalAureliaDefaults, ...defaults };
+}
+
+/**
+ * Middleware that provides router-scoped defaults (e.g. document bundle paths, streaming)
+ * to all child aurelia() route handlers.
+ *
+ * @example
+ * ```typescript
+ * app.use('*', aureliaDefaults({
+ *   document: { cssBundle: '/public/style.css', jsBundle: '/public/client.js' },
+ *   streaming: true,
+ * }));
+ * ```
+ */
+export function aureliaDefaults(defaults: AureliaDefaultsOptions) {
+  return async (c: Context, next: () => Promise<void>) => {
+    c.set('__aurelia_defaults', defaults);
+    await next();
+  };
+}
+
+const MIME_MAP: Record<string, string> = {
+  '.css': 'text/css; charset=utf-8',
+  '.js': 'application/javascript; charset=utf-8',
+  '.mjs': 'application/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.ico': 'image/x-icon',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+  '.ttf': 'font/ttf',
+};
+
+/**
+ * Ergonomic static asset middleware for Aurelia client bundles and assets.
+ * Eliminates 20+ lines of readFileSync and MIME detection boilerplate.
+ *
+ * @example
+ * ```typescript
+ * app.use('/public/*', serveAureliaAssets({ root: './public' }));
+ * ```
+ */
+export function serveAureliaAssets(options: ServeAssetsOptions) {
+  const rootDir = pathResolve(options.root);
+  const prefix = options.prefix ?? '/public';
+  const maxAge = options.maxAge ?? 86400;
+
+  return async (c: Context, next: () => Promise<void>) => {
+    const urlPath = c.req.path;
+    if (!urlPath.startsWith(prefix)) {
+      return next();
+    }
+
+    const relPath = urlPath.slice(prefix.length).replace(/^\/+/, '');
+    const safePath = pathNormalize(pathResolve(rootDir, relPath));
+
+    // Prevent directory traversal attacks
+    if (!safePath.startsWith(rootDir)) {
+      return c.text('Forbidden', 403);
+    }
+
+    if (!existsSync(safePath)) {
+      return next();
+    }
+
+    try {
+      const stat = statSync(safePath);
+      if (!stat.isFile()) {
+        return next();
+      }
+
+      const dotIdx = safePath.lastIndexOf('.');
+      const ext = dotIdx !== -1 ? safePath.slice(dotIdx).toLowerCase() : '';
+      const contentType = MIME_MAP[ext] ?? 'application/octet-stream';
+      const content = readFileSync(safePath);
+
+      return c.body(content, 200, {
+        'Content-Type': contentType,
+        'Cache-Control': `public, max-age=${maxAge}`,
+        'Content-Length': stat.size.toString(),
+      });
+    } catch {
+      return next();
+    }
+  };
+}
 
 /**
  * Content negotiation result
@@ -234,6 +339,18 @@ export function aurelia(
 
   return async (c: Context) => {
     try {
+      // === PHASE 0: DEFAULTS RESOLUTION ===
+      const contextDefaults = c.get('__aurelia_defaults') as AureliaDefaultsOptions | undefined;
+      const effectiveStreaming =
+        config.streaming ?? contextDefaults?.streaming ?? globalAureliaDefaults.streaming ?? false;
+      const effectiveDocument = {
+        ...globalAureliaDefaults.document,
+        ...contextDefaults?.document,
+        ...config.document,
+      };
+      const effectiveFallback =
+        config.fallback ?? contextDefaults?.fallback ?? globalAureliaDefaults.fallback ?? 'error';
+
       // === PHASE 1: AUTH GUARD ===
       const context = extractRenderContext(c);
       const isAuthenticated = context.user !== null;
@@ -350,7 +467,7 @@ export function aurelia(
       } catch (error) {
         console.error('Rendering failed:', error);
         
-        if (config.fallback === 'spa') {
+        if (effectiveFallback === 'spa') {
           // Return empty shell for client-side rendering
           html = createFallbackHtml();
         } else {
@@ -374,11 +491,11 @@ export function aurelia(
       );
 
       // Streaming response mode for near-zero TTFB
-      if (config.streaming) {
+      if (effectiveStreaming) {
         const marker = '<!--__SSR_STREAM_SPLIT__-->';
         const templateDoc = createHtmlDocument(marker, payload, {
           title: config.title,
-          ...config.document,
+          ...effectiveDocument,
         });
         const [preamble, postamble] = templateDoc.split(marker);
         const encoder = new TextEncoder();
@@ -399,7 +516,7 @@ export function aurelia(
       // Standard buffered HTML document
       const document = createHtmlDocument(html, payload, {
         title: config.title,
-        ...config.document,
+        ...effectiveDocument,
       });
 
       return c.html(document);

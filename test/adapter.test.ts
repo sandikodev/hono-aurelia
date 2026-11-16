@@ -7,7 +7,13 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Hono } from 'hono';
-import { aurelia, createAuthMiddleware, createAureliaRouteGroup } from '../src/adapter';
+import {
+  aurelia,
+  aureliaDefaults,
+  serveAureliaAssets,
+  createAuthMiddleware,
+  createAureliaRouteGroup,
+} from '../src/adapter';
 
 // Mock component
 const MockComponent = {
@@ -698,6 +704,48 @@ describe('integration scenarios', () => {
       expect(res.status).toBe(401);
       const body = await res.json() as any;
       expect(body.error).toBe('Unauthorized');
+    });
+
+    it('inherits document and streaming settings from aureliaDefaults middleware', async () => {
+      const app = new Hono();
+      app.use('*', aureliaDefaults({
+        document: {
+          cssBundle: '/static/theme.css',
+          jsBundle: '/static/bundle.js',
+        },
+        streaming: true,
+      }));
+
+      // Route defined as a pure one-liner without repeating document config
+      app.get('/clean-route', aurelia(MockComponent, 'Clean Title'));
+
+      const res = await app.request('/clean-route', {
+        headers: { Accept: 'text/html' },
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-type')).toContain('text/html');
+      expect(res.headers.get('transfer-encoding')).toBe('chunked');
+      const text = await res.text();
+      expect(text).toContain('Clean Title');
+      expect(text).toContain('/static/theme.css');
+      expect(text).toContain('/static/bundle.js');
+    });
+
+    it('serves static assets via serveAureliaAssets middleware', async () => {
+      const app = new Hono();
+      app.use('/public/*', serveAureliaAssets({
+        root: import.meta.dir,
+        prefix: '/public',
+      }));
+
+      // Probe adapter.test.ts itself through static server
+      const res = await app.request('/public/adapter.test.ts');
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-type')).toContain('application/octet-stream');
+      expect(res.headers.get('cache-control')).toContain('public');
+      const body = await res.text();
+      expect(body).toContain('@hono/aurelia-ssr Adapter Tests');
     });
   });
 });
