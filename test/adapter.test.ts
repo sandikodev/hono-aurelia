@@ -12,6 +12,7 @@ import { aurelia, createAuthMiddleware, createAureliaRouteGroup } from '../src/a
 // Mock component
 const MockComponent = {
   name: 'MockPage',
+  template: '<div>Mock Content</div>',
   render: () => '<div>Mock Content</div>',
 };
 
@@ -27,10 +28,6 @@ describe('aurelia() route handler', () => {
 
   beforeEach(() => {
     app = new Hono();
-    // Mock renderAurelia
-    vi.mock('../src/render.js', () => ({
-      renderAurelia: vi.fn(async () => '<div id="app">Content</div>'),
-    }));
   });
 
   describe('basic rendering', () => {
