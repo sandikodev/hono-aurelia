@@ -87,6 +87,8 @@ export interface DocumentOptions {
   basePath?: string;
   cssBundle?: string;
   jsBundle?: string;
+  nonce?: string;
+  meta?: Record<string, string>[];
 }
 
 /**

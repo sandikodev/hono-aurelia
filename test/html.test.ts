@@ -73,6 +73,14 @@ describe('createHtmlDocument()', () => {
     expect(html).toContain('<title>Dashboard</title>');
   });
 
+  it('should support CSP nonce attribute on inline script and module bundle', async () => {
+    const payload = await serializeState(mockContext);
+    const html = createHtmlDocument('<div>Test</div>', payload, { nonce: 'abc123nonce==' });
+
+    expect(html).toContain('<script nonce="abc123nonce==">');
+    expect(html).toContain('<script type="module" src="/src/main.ts" nonce="abc123nonce=="></script>');
+  });
+
   it('should use custom language', async () => {
     const payload = await serializeState(mockContext);
     const html = createHtmlDocument('<div>Test</div>', payload, {

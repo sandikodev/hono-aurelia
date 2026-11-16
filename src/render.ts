@@ -444,35 +444,44 @@ async function performAureliaRender(
 
   // Initialize Aurelia with request-scoped template element factory and SSR marker preservation
   const app = new Aurelia();
-  app.register(
-    Registration.singleton(ITemplateElementFactory, SsrTemplateElementFactory),
-    Registration.instance(ISSRContext, { preserveMarkers: true })
-  );
+  try {
+    app.register(
+      Registration.singleton(ITemplateElementFactory, SsrTemplateElementFactory),
+      Registration.instance(ISSRContext, { preserveMarkers: true })
+    );
 
-  // Register additional registrations if provided
-  if (options.registrations && Array.isArray(options.registrations)) {
-    app.register(...options.registrations);
+    // Register additional registrations if provided
+    if (options.registrations && Array.isArray(options.registrations)) {
+      app.register(...options.registrations);
+    }
+
+    const host = win.document.getElementById('ssr-root');
+    if (!host) {
+      throw new Error('Host element #ssr-root not found in server DOM');
+    }
+
+    // Mount and start Aurelia application
+    await app.app({ host, component: rootComponent }).start();
+
+    // If a settle delay is requested (or microtask drain)
+    if (options.settle && options.settle > 0) {
+      await new Promise((r) => setTimeout(r, options.settle));
+    }
+
+    const renderedHtml = host.innerHTML;
+    return renderedHtml;
+  } finally {
+    try {
+      await app.stop();
+    } catch {
+      // Ignore stop errors on unmounted components
+    }
+    try {
+      await app.dispose();
+    } catch {
+      // Ignore dispose errors
+    }
   }
-
-  const host = win.document.getElementById('ssr-root');
-  if (!host) {
-    throw new Error('Host element #ssr-root not found in server DOM');
-  }
-
-  // Mount and start Aurelia application
-  await app.app({ host, component: rootComponent }).start();
-
-  // If a settle delay is requested (or microtask drain)
-  if (options.settle && options.settle > 0) {
-    await new Promise((r) => setTimeout(r, options.settle));
-  }
-
-  const renderedHtml = host.innerHTML;
-
-  // Cleanly stop Aurelia
-  await app.stop();
-
-  return renderedHtml;
 }
 
 /**

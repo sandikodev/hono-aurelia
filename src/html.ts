@@ -35,10 +35,12 @@ export function createHtmlDocument(
     basePath = '/',
     cssBundle = '/assets/main.css',
     jsBundle = '/src/main.ts',
+    nonce,
   } = options;
 
   // Serialize payload for injection
   const payloadJson = stringifyPayload(payload);
+  const nonceAttr = nonce ? ` nonce="${escapeAttr(nonce)}"` : '';
 
   // Build HTML document
   const html = `<!DOCTYPE html>
@@ -57,7 +59,7 @@ export function createHtmlDocument(
     <link rel="stylesheet" href="${escapeAttr(cssBundle)}" />
     
     <!-- Hydration Payload -->
-    <script>
+    <script${nonceAttr}>
       window.__HYDRATION__ = ${payloadJson};
       window.__HYDRATION_TIME__ = ${payload.timestamp};
     </script>
@@ -67,7 +69,7 @@ export function createHtmlDocument(
     <app-root>${bodyContent}</app-root>
     
     <!-- Main Application -->
-    <script type="module" src="${escapeAttr(jsBundle)}"></script>
+    <script type="module" src="${escapeAttr(jsBundle)}"${nonceAttr}></script>
   </body>
 </html>`;
 
