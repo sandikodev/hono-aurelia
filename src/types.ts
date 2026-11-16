@@ -31,6 +31,10 @@ export interface AureliaRouteConfig {
   loaders?: {
     [key: string]: (c: Context) => Promise<unknown>;
   };
+  actions?: {
+    [key: string]: (c: Context) => Promise<unknown | Response>;
+  };
+  action?: (c: Context) => Promise<unknown | Response>;
   fallback?: 'spa' | 'error';
   document?: DocumentOptions;
   streaming?: boolean;
@@ -45,6 +49,8 @@ export interface AureliaComponentWithMetadata {
   requiresAuth?: boolean;
   loader?: (c: Context) => Promise<Record<string, unknown> | unknown>;
   loaders?: Record<string, (c: Context) => Promise<unknown>>;
+  action?: (c: Context) => Promise<unknown | Response>;
+  actions?: Record<string, (c: Context) => Promise<unknown | Response>>;
   fallback?: 'spa' | 'error';
   clientOnly?: boolean;
   serverOnly?: boolean;

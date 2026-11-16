@@ -747,5 +747,66 @@ describe('integration scenarios', () => {
       const body = await res.text();
       expect(body).toContain('@hono/aurelia-ssr Adapter Tests');
     });
+
+    it('dispatches mutations to co-located static actions on POST/PUT/DELETE', async () => {
+      const app = new Hono();
+
+      class ActionComponent {
+        static name = 'ActionPage';
+        static title = 'Actions Test';
+        static actions = {
+          like: async (_c: any) => {
+            return { success: true, count: 42 };
+          },
+          comment: async (c: any) => {
+            const body = await c.req.json();
+            return { success: true, author: body.author };
+          },
+        };
+      }
+
+      app.all('/posts/:slug', aurelia(ActionComponent));
+
+      // 1. Query parameter dispatch: ?_action=like
+      const resLike = await app.request('/posts/test-post?_action=like', {
+        method: 'POST',
+      });
+      expect(resLike.status).toBe(200);
+      const dataLike = await resLike.json() as any;
+      expect(dataLike).toEqual({ success: true, count: 42 });
+
+      // 2. Header dispatch: X-Action: like
+      const resHeader = await app.request('/posts/test-post', {
+        method: 'POST',
+        headers: { 'X-Action': 'like' },
+      });
+      expect(resHeader.status).toBe(200);
+      const dataHeader = await resHeader.json() as any;
+      expect(dataHeader).toEqual({ success: true, count: 42 });
+
+      // 3. JSON body action dispatch: { action: 'comment', author: 'Sandikodev' }
+      const resComment = await app.request('/posts/test-post', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'comment', author: 'Sandikodev' }),
+      });
+      expect(resComment.status).toBe(200);
+      const dataComment = await resComment.json() as any;
+      expect(dataComment).toEqual({ success: true, author: 'Sandikodev' });
+
+      // 4. Unknown action returns 404
+      const resUnknown = await app.request('/posts/test-post?_action=unknown', {
+        method: 'POST',
+      });
+      expect(resUnknown.status).toBe(404);
+
+      // 5. Component without actions returns 405 Method Not Allowed
+      const appNoAction = new Hono();
+      appNoAction.all('/no-actions', aurelia(MockComponent));
+      const resNoAction = await appNoAction.request('/no-actions', {
+        method: 'POST',
+      });
+      expect(resNoAction.status).toBe(405);
+    });
   });
 });

@@ -362,6 +362,62 @@ export function aurelia(
         );
       }
 
+      // === PHASE 1.5: CO-LOCATED ACTIONS & MUTATIONS (POST/PUT/PATCH/DELETE) ===
+      if (c.req.method !== 'GET' && c.req.method !== 'HEAD') {
+        let actionName = c.req.query('_action') || c.req.query('action') || c.req.header('X-Action');
+
+        const contentType = c.req.header('Content-Type') || '';
+        if (!actionName) {
+          if (contentType.includes('application/json')) {
+            const body = await c.req.json().catch(() => null);
+            if (body && typeof body._action === 'string') {
+              actionName = body._action;
+            } else if (body && typeof body.action === 'string') {
+              actionName = body.action;
+            }
+          } else if (
+            contentType.includes('application/x-www-form-urlencoded') ||
+            contentType.includes('multipart/form-data')
+          ) {
+            const formData = (await c.req.parseBody().catch(() => ({}))) as Record<string, unknown>;
+            if (typeof formData._action === 'string') {
+              actionName = formData._action;
+            } else if (typeof formData.action === 'string') {
+              actionName = formData.action;
+            }
+          }
+        }
+
+        const effectiveActionName = actionName || 'default';
+        const actionsMap = (config.actions || comp?.actions) as
+          | Record<string, (c: Context) => Promise<unknown>>
+          | undefined;
+        let actionHandler = actionsMap?.[effectiveActionName];
+
+        if (!actionHandler && effectiveActionName === 'default') {
+          if (typeof config.action === 'function') {
+            actionHandler = config.action;
+          } else if (typeof comp?.action === 'function') {
+            actionHandler = comp.action as (c: Context) => Promise<unknown>;
+          }
+        }
+
+        if (!actionHandler) {
+          if (actionsMap && Object.keys(actionsMap).length > 0) {
+            return c.json({ error: `Action "${effectiveActionName}" not found` }, 404);
+          }
+          return c.text('Method Not Allowed', { status: 405 });
+        }
+
+        const actionResult = await actionHandler(c);
+
+        if (actionResult instanceof Response) {
+          return actionResult;
+        }
+
+        return c.json(actionResult !== undefined ? actionResult : { success: true });
+      }
+
       // === PHASE 2: CONTENT NEGOTIATION ===
       const acceptHeader = c.req.header('Accept');
       const { preferredType, isHtml, isJson } = negotiateContent(acceptHeader);
