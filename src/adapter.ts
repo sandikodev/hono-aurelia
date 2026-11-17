@@ -205,19 +205,13 @@ function extractQValue(acceptHeader: string, mimeType: string): number {
 /**
  * Extract render context from Hono context
  * 
- * Expects context to be set by auth middleware:
- * - c.get('user'): User object or null
- * - c.get('workspace'): Workspace object or null
- * - c.get('role'): Role string or null
+ * Returns all request-scoped context variables from c.var without imposing
+ * rigid schema constraints.
  * 
  * @internal
  */
 function extractRenderContext(c: Context): RenderContext {
-  return {
-    user: c.get('user') || null,
-    workspace: c.get('workspace') || null,
-    role: c.get('role') || null,
-  };
+  return (c.var as RenderContext) || {};
 }
 
 /**
@@ -353,7 +347,10 @@ export function aurelia(
 
       // === PHASE 1: AUTH GUARD ===
       const context = extractRenderContext(c);
-      const isAuthenticated = context.user !== null;
+      const ctxRecord = context as Record<string, unknown>;
+      const isAuthenticated = Boolean(
+        c.get('user') || c.get('auth') || c.get('session') || ctxRecord.user
+      );
 
       if (config.requiresAuth && !isAuthenticated) {
         return c.json(
@@ -588,103 +585,5 @@ export function aurelia(
         { status: 500 }
       );
     }
-  };
-}
-
-/**
- * Extract auth context from request headers or cookies
- * 
- * Useful middleware factory for setting up c.get('user'), etc.
- * 
- * @example
- * ```typescript
- * app.use(createAuthMiddleware({
- *   getUserFromToken: async (token) => {
- *     return await db.users.findByToken(token);
- *   }
- * }));
- * ```
- */
-export interface AuthMiddlewareConfig {
-  getUserFromToken?: (token: string) => Promise<unknown>;
-  getWorkspaceFromRequest?: (c: Context) => Promise<unknown>;
-  getRoleForUser?: (user: unknown, workspace: unknown) => string | null;
-}
-
-/**
- * Create auth middleware for extracting and setting render context
- * 
- * @internal This is optional — developers can implement their own auth
- */
-export function createAuthMiddleware(config: AuthMiddlewareConfig) {
-  return async (c: Context, next: () => Promise<void>) => {
-    // Extract token from Authorization header, query parameter, or cookie
-    const authHeader = c.req.header('Authorization');
-    const token = authHeader?.replace(/^Bearer\s+/i, '') || c.req.query('token');
-
-    let user: unknown = null;
-    let workspace: unknown = null;
-    let role: string | null = null;
-
-    // Load user from token
-    if (token && config.getUserFromToken) {
-      try {
-        user = await config.getUserFromToken(token);
-      } catch (error) {
-        console.error('Failed to load user from token:', error);
-      }
-    }
-
-    // Load workspace
-    if (config.getWorkspaceFromRequest) {
-      try {
-        workspace = await config.getWorkspaceFromRequest(c);
-      } catch (error) {
-        console.error('Failed to load workspace:', error);
-      }
-    }
-
-    // Determine role
-    if (user && workspace && config.getRoleForUser) {
-      try {
-        role = config.getRoleForUser(user, workspace);
-      } catch (error) {
-        console.error('Failed to determine role:', error);
-      }
-    }
-
-    // Set context
-    c.set('user', user);
-    c.set('workspace', workspace);
-    c.set('role', role);
-
-    await next();
-  };
-}
-
-/**
- * Utility: Create a route group with shared config
- * 
- * @example
- * ```typescript
- * const protectedRoutes = createAureliaRouteGroup({
- *   requiresAuth: true,
- *   loaders: { user: async (c) => c.get('user') }
- * });
- * 
- * app.get('/profile', protectedRoutes.handler(ProfilePage, 'Profile'));
- * app.get('/settings', protectedRoutes.handler(SettingsPage, 'Settings'));
- * ```
- */
-export function createAureliaRouteGroup(defaults: Partial<AureliaRouteConfig>) {
-  return {
-    handler: (component: unknown, title: string, overrides?: Partial<AureliaRouteConfig>) => {
-      return aurelia({
-        ...defaults,
-        component,
-        title,
-        ...overrides,
-      } as AureliaRouteConfig);
-    },
   };
 }

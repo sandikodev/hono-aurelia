@@ -11,8 +11,6 @@ import {
   aurelia,
   aureliaDefaults,
   serveAureliaAssets,
-  createAuthMiddleware,
-  createAureliaRouteGroup,
 } from '../src/adapter';
 
 // Mock component
@@ -390,112 +388,6 @@ describe('aurelia() route handler', () => {
   });
 });
 
-describe('createAuthMiddleware()', () => {
-  it('creates middleware that sets context', async () => {
-    const middleware = createAuthMiddleware({});
-    expect(middleware).toBeDefined();
-  });
-
-  it('loads user from token', async () => {
-    const getUserFromToken = vi.fn(async (_token) => ({
-      id: '1',
-      email: 'user@example.com',
-    }));
-
-    const middleware = createAuthMiddleware({ getUserFromToken });
-    expect(middleware).toBeDefined();
-  });
-
-  it('loads workspace from request', async () => {
-    const getWorkspaceFromRequest = vi.fn(async () => ({
-      id: 'ws-1',
-      name: 'Workspace',
-    }));
-
-    const middleware = createAuthMiddleware({ getWorkspaceFromRequest });
-    expect(middleware).toBeDefined();
-  });
-
-  it('determines role for user', async () => {
-    const getRoleForUser = vi.fn((_user, _workspace) => 'admin');
-
-    const middleware = createAuthMiddleware({ getRoleForUser });
-    expect(middleware).toBeDefined();
-  });
-
-  it('handles missing token gracefully', async () => {
-    const middleware = createAuthMiddleware({});
-    expect(middleware).toBeDefined();
-  });
-
-  it('handles loader errors gracefully', async () => {
-    const getUserFromToken = vi.fn(async () => {
-      throw new Error('Token validation failed');
-    });
-
-    const middleware = createAuthMiddleware({ getUserFromToken });
-    expect(middleware).toBeDefined();
-  });
-});
-
-describe('createAureliaRouteGroup()', () => {
-  it('creates a route group factory', () => {
-    const group = createAureliaRouteGroup({
-      requiresAuth: true,
-    });
-
-    expect(group.handler).toBeDefined();
-  });
-
-  it('applies default config to routes', () => {
-    const group = createAureliaRouteGroup({
-      requiresAuth: true,
-    });
-
-    const handler = group.handler(MockComponent, 'Test Page');
-    expect(handler).toBeDefined();
-  });
-
-  it('allows overriding defaults per route', () => {
-    const group = createAureliaRouteGroup({
-      requiresAuth: true,
-    });
-
-    const handler = group.handler(MockComponent, 'Test Page', {
-      requiresAuth: false,
-    });
-
-    expect(handler).toBeDefined();
-  });
-
-  it('applies shared loaders to all routes', () => {
-    const group = createAureliaRouteGroup({
-      loaders: {
-        common: async () => ({ value: 1 }),
-      },
-    });
-
-    const handler = group.handler(MockComponent, 'Test Page');
-    expect(handler).toBeDefined();
-  });
-
-  it('merges loaders from group and route', () => {
-    const group = createAureliaRouteGroup({
-      loaders: {
-        common: async () => ({ value: 1 }),
-      },
-    });
-
-    const handler = group.handler(MockComponent, 'Test Page', {
-      loaders: {
-        additional: async () => ({ extra: 2 }),
-      },
-    });
-
-    expect(handler).toBeDefined();
-  });
-});
-
 describe('content negotiation utility', () => {
   it('parses q-values correctly', () => {
     // Test coverage for extractQValue
@@ -602,15 +494,10 @@ describe('integration scenarios', () => {
     expect(app).toBeDefined();
   });
 
-  it('protected route group', async () => {
-    const group = createAureliaRouteGroup({
-      requiresAuth: true,
-    });
-
+  it('scoped defaults middleware', async () => {
     const app = new Hono();
-    app.get('/profile', group.handler(MockComponent, 'Profile'));
-    app.get('/settings', group.handler(MockComponent, 'Settings'));
-
+    app.use('/admin/*', aureliaDefaults({ fallback: 'spa' }));
+    app.get('/admin/profile', aurelia(MockComponent, 'Profile'));
     expect(app).toBeDefined();
   });
 

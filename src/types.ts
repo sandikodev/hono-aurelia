@@ -1,25 +1,13 @@
 /**
  * @hono/aurelia Types
  * 
- * Hono-specific type definitions and re-exports of @aureliajs/ssr core types.
+ * Thin adapter type definitions for Aurelia 2 SSR on Hono.
  */
 
 import type { Context } from 'hono';
 import type { DocumentOptions } from '@aureliajs/ssr';
 
-// Re-export all core Aurelia SSR types
-export type {
-  RenderContext,
-  User,
-  Workspace,
-  HydrationPayload,
-  HydrationResult,
-  RenderOptions,
-  DocumentOptions,
-  HydrationOptions,
-  ClientHydratorOptions,
-  IRequestContext,
-} from '@aureliajs/ssr';
+export type { DocumentOptions } from '@aureliajs/ssr';
 
 /**
  * Route configuration for aurelia() adapter
@@ -72,13 +60,4 @@ export interface ServeAssetsOptions {
   root: string;
   prefix?: string;
   maxAge?: number;
-}
-
-/**
- * Configuration for createAuthMiddleware()
- */
-export interface AuthMiddlewareConfig {
-  getUserFromToken?: (token: string) => Promise<unknown>;
-  getWorkspaceFromRequest?: (c: Context) => Promise<unknown>;
-  getRoleForUser?: (user: unknown, workspace: unknown) => string | null;
 }

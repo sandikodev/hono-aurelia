@@ -16,11 +16,6 @@
       "types": "./dist/server.d.ts",
       "import": "./dist/server.js",
       "default": "./dist/server.js"
-    },
-    "./client": {
-      "types": "./dist/client.d.ts",
-      "import": "./dist/client.js",
-      "default": "./dist/client.js"
     }
   },
   "scripts": {
@@ -45,11 +40,9 @@
     "hono": "^4.0.0"
   },
   "dependencies": {
-    "@aureliajs/ssr": "^0.1.0",
-    "jsdom": "^23.0.0"
+    "@aureliajs/ssr": "^0.1.0"
   },
   "devDependencies": {
-    "@types/jsdom": "^30.0.0",
     "@types/node": "^20.10.0",
     "@typescript-eslint/eslint-plugin": "^6.13.0",
     "@typescript-eslint/parser": "^6.13.0",
