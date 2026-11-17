@@ -28,6 +28,7 @@
 import type { Context } from 'hono';
 import { resolve as pathResolve, normalize as pathNormalize } from 'node:path';
 import { existsSync, readFileSync, statSync } from 'node:fs';
+import { CustomElement } from 'aurelia';
 import {
   renderAurelia,
   serializeState,
@@ -220,11 +221,11 @@ function extractRenderContext(c: Context): RenderContext {
  * @internal
  */
 async function executeLoaders(
-  loaders: Record<string, (c: Context) => Promise<unknown>> | undefined,
+  loaders: Record<string, (c: Context) => Promise<unknown | Response>> | undefined,
   c: Context
-): Promise<Record<string, unknown>> {
+): Promise<{ data: Record<string, unknown>; response?: Response }> {
   if (!loaders || Object.keys(loaders).length === 0) {
-    return {};
+    return { data: {} };
   }
 
   const results = await Promise.allSettled(
@@ -243,6 +244,9 @@ async function executeLoaders(
   
   for (const result of results) {
     if (result.status === 'fulfilled') {
+      if (result.value.data instanceof Response) {
+        return { data: {}, response: result.value.data };
+      }
       data[result.value.key] = result.value.data;
     } else {
       // Log but don't fail — loaders are optional data enrichment
@@ -250,7 +254,7 @@ async function executeLoaders(
     }
   }
 
-  return data;
+  return { data };
 }
 
 /**
@@ -284,11 +288,11 @@ export function aurelia(
 ): (c: Context) => Promise<Response>;
 export function aurelia(
   component: unknown,
-  title?: string
+  title?: string | ((data: Record<string, unknown>, c: Context) => string)
 ): (c: Context) => Promise<Response>;
 export function aurelia(
   configOrComponent: AureliaRouteConfig | unknown,
-  maybeTitle?: string
+  maybeTitle?: string | ((data: Record<string, unknown>, c: Context) => string)
 ): (c: Context) => Promise<Response> {
   // Normalize config
   let config: AureliaRouteConfig;
@@ -310,8 +314,8 @@ export function aurelia(
 
   // Infer title from static component property if omitted
   if (!config.title && comp) {
-    if (typeof comp.title === 'string') {
-      config.title = comp.title;
+    if (typeof comp.title === 'string' || typeof comp.title === 'function') {
+      config.title = comp.title as any;
     } else if (typeof comp.name === 'string' && comp.name) {
       config.title = comp.name;
     } else {
@@ -427,6 +431,9 @@ export function aurelia(
         if (typeof comp.loader === 'function') {
           try {
             const result = await (comp.loader as (c: Context) => Promise<unknown>)(c);
+            if (result instanceof Response) {
+              return result;
+            }
             if (result && typeof result === 'object') {
               Object.assign(initialData, result);
             }
@@ -442,8 +449,11 @@ export function aurelia(
         }
         if (comp.loaders && typeof comp.loaders === 'object') {
           try {
-            const data = await executeLoaders(comp.loaders as Record<string, (c: Context) => Promise<unknown>>, c);
-            Object.assign(initialData, data);
+            const res = await executeLoaders(comp.loaders as Record<string, (c: Context) => Promise<unknown | Response>>, c);
+            if (res.response) {
+              return res.response;
+            }
+            Object.assign(initialData, res.data);
           } catch (error) {
             console.error('Co-located loaders failed:', error);
             if (config.fallback === 'error') {
@@ -459,8 +469,11 @@ export function aurelia(
       // 2. Explicit config.loaders overrides/augments co-located loaders
       if (config.loaders) {
         try {
-          const loaded = await executeLoaders(config.loaders, c);
-          Object.assign(initialData, loaded);
+          const res = await executeLoaders(config.loaders, c);
+          if (res.response) {
+            return res.response;
+          }
+          Object.assign(initialData, res.data);
         } catch (error) {
           // If loaders fail, decide based on fallback strategy
           if (config.fallback === 'error') {
@@ -480,24 +493,60 @@ export function aurelia(
 
       let componentName = 'Page';
       if (comp) {
-        if (typeof comp.name === 'string' && comp.name) {
-          componentName = comp.name;
-        } else if (typeof config.component === 'function' && config.component.name) {
-          componentName = config.component.name;
+        try {
+          if (CustomElement.isType(comp as any)) {
+            componentName = CustomElement.getDefinition(comp as any).name;
+          } else if (typeof comp.name === 'string' && comp.name) {
+            componentName = comp.name;
+          } else if (typeof config.component === 'function' && config.component.name) {
+            componentName = config.component.name;
+          }
+        } catch {
+          if (typeof comp.name === 'string' && comp.name) {
+            componentName = comp.name;
+          }
         }
+      }
+
+      // Dynamic title resolution
+      let effectiveTitle = 'Aurelia App';
+      const titleCandidate = config.title ?? comp?.title ?? comp?.name;
+      if (typeof titleCandidate === 'function') {
+        try {
+          effectiveTitle = (titleCandidate as (d: Record<string, unknown>, c: Context) => string)(initialData, c) || 'Aurelia App';
+        } catch {
+          effectiveTitle = 'Aurelia App';
+        }
+      } else if (typeof titleCandidate === 'string' && titleCandidate) {
+        effectiveTitle = titleCandidate;
+      }
+
+      // Dynamic HTTP status resolution
+      let effectiveStatus = 200;
+      if (typeof config.status === 'function') {
+        effectiveStatus = config.status(initialData, c);
+      } else if (typeof config.status === 'number') {
+        effectiveStatus = config.status;
+      } else if (typeof comp?.status === 'function') {
+        effectiveStatus = (comp.status as (d: Record<string, unknown>, c: Context) => number)(initialData, c);
+      } else if (typeof comp?.status === 'number') {
+        effectiveStatus = comp.status;
+      } else if (c.res && c.res.status && c.res.status !== 200) {
+        effectiveStatus = c.res.status;
       }
 
       // === PHASE 4: JSON RESPONSE ===
       if (preferredType === 'json' && isJson) {
         return c.json({
           component: componentName,
+          title: effectiveTitle,
           context: {
             ...context,
             isAuthenticated,
           },
           initialData,
           timestamp: Date.now(),
-        });
+        }, effectiveStatus as any);
       }
 
       // === PHASE 5: HTML RESPONSE ===
@@ -547,7 +596,7 @@ export function aurelia(
       if (effectiveStreaming) {
         const marker = '<!--__SSR_STREAM_SPLIT__-->';
         const templateDoc = createHtmlDocument(marker, payload, {
-          title: config.title,
+          title: effectiveTitle,
           ...effectiveDocument,
         });
         const [preamble, postamble] = templateDoc.split(marker);
@@ -560,7 +609,7 @@ export function aurelia(
             controller.close();
           },
         });
-        return c.body(stream, 200, {
+        return c.body(stream, effectiveStatus as any, {
           'Content-Type': 'text/html; charset=utf-8',
           'Transfer-Encoding': 'chunked',
         });
@@ -568,11 +617,11 @@ export function aurelia(
 
       // Standard buffered HTML document
       const document = createHtmlDocument(html, payload, {
-        title: config.title,
+        title: effectiveTitle,
         ...effectiveDocument,
       });
 
-      return c.html(document);
+      return c.html(document, effectiveStatus as any);
 
     } catch (error) {
       console.error('Route handler error:', error);

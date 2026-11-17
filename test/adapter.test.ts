@@ -695,5 +695,65 @@ describe('integration scenarios', () => {
       });
       expect(resNoAction.status).toBe(405);
     });
+
+    it('immediately returns Response when loader returns redirect or response', async () => {
+      const app = new Hono();
+
+      class RedirectComponent {
+        static name = 'RedirectPage';
+        static async loader(c: any) {
+          return c.redirect('/login');
+        }
+      }
+
+      app.get('/protected-resource', aurelia(RedirectComponent));
+
+      const res = await app.request('/protected-resource');
+      expect(res.status).toBe(302);
+      expect(res.headers.get('location')).toBe('/login');
+    });
+
+    it('evaluates dynamic title function based on loaded data', async () => {
+      const app = new Hono();
+
+      class DynamicTitleComponent {
+        static name = 'DynamicTitlePage';
+        static title = (data: any) => `${data.post?.title} — Engineering Blog`;
+        static async loader() {
+          return { post: { title: 'Advanced Aurelia 2 Architecture' } };
+        }
+      }
+
+      app.get('/articles/advanced', aurelia(DynamicTitleComponent));
+
+      const res = await app.request('/articles/advanced', {
+        headers: { Accept: 'text/html' },
+      });
+      expect(res.status).toBe(200);
+      const html = await res.text();
+      expect(html).toContain('Advanced Aurelia 2 Architecture — Engineering Blog');
+    });
+
+    it('respects dynamic HTTP status code from component or loader', async () => {
+      const app = new Hono();
+
+      class NotFoundComponent {
+        static name = 'NotFoundArticle';
+        static status = (data: any) => data.post ? 200 : 404;
+        static title = (data: any) => data.post ? 'Found' : 'Article Not Found';
+        static async loader() {
+          return { post: null };
+        }
+      }
+
+      app.get('/missing-article', aurelia(NotFoundComponent));
+
+      const res = await app.request('/missing-article', {
+        headers: { Accept: 'text/html' },
+      });
+      expect(res.status).toBe(404);
+      const html = await res.text();
+      expect(html).toContain('Article Not Found');
+    });
   });
 });

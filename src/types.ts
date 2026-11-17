@@ -14,10 +14,11 @@ export type { DocumentOptions } from '@aureliajs/ssr';
  */
 export interface AureliaRouteConfig {
   component: unknown;
-  title?: string;
+  title?: string | ((data: Record<string, unknown>, c: Context) => string);
+  status?: number | ((data: Record<string, unknown>, c: Context) => number);
   requiresAuth?: boolean;
   loaders?: {
-    [key: string]: (c: Context) => Promise<unknown>;
+    [key: string]: (c: Context) => Promise<unknown | Response>;
   };
   actions?: {
     [key: string]: (c: Context) => Promise<unknown | Response>;
@@ -33,10 +34,11 @@ export interface AureliaRouteConfig {
  */
 export interface AureliaComponentWithMetadata {
   name?: string;
-  title?: string;
+  title?: string | ((data: Record<string, unknown>, c: Context) => string);
+  status?: number | ((data: Record<string, unknown>, c: Context) => number);
   requiresAuth?: boolean;
-  loader?: (c: Context) => Promise<Record<string, unknown> | unknown>;
-  loaders?: Record<string, (c: Context) => Promise<unknown>>;
+  loader?: (c: Context) => Promise<Record<string, unknown> | Response | unknown>;
+  loaders?: Record<string, (c: Context) => Promise<unknown | Response>>;
   action?: (c: Context) => Promise<unknown | Response>;
   actions?: Record<string, (c: Context) => Promise<unknown | Response>>;
   fallback?: 'spa' | 'error';
