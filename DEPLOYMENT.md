@@ -1,6 +1,6 @@
-# Deployment Guide: @hono/aurelia-ssr
+# Deployment Guide: @hono/aurelia
 
-**Production deployment patterns for SSR apps built with @hono/aurelia-ssr**
+**Production deployment patterns for SSR apps built with @hono/aurelia**
 
 ---
 

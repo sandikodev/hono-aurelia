@@ -281,7 +281,7 @@ Phase 2 builds on Phase 1 to add:
 ## Git History
 
 ```
-7fd7fd1 Initial: @hono/aurelia-ssr package structure Phase 1
+7fd7fd1 Initial: @hono/aurelia package structure Phase 1
   • Create package structure
   • Implement renderAurelia(), serializeState(), createHtmlDocument()
   • Write test suite (455 lines)

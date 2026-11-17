@@ -1,4 +1,4 @@
-# @hono/aurelia-ssr — Proposal to Hono & Aurelia Teams
+# @hono/aurelia — Proposal to Hono & Aurelia Teams
 
 **Subject:** Native Server-Side Rendering Support for Aurelia 2 on Hono  
 **Date:** 2026-11-13  
@@ -12,7 +12,7 @@
 
 We've identified a **critical gap in the Aurelia 2 ecosystem**: no native fullstack SSR support comparable to Next.js, SvelteKit, or Nuxt.
 
-**Proposal:** Create `@hono/aurelia-ssr` — a production-grade SSR adapter that bridges Hono + Aurelia and transforms them from "SPA + headless API" into a native **fullstack framework**.
+**Proposal:** Create `@hono/aurelia` — a production-grade SSR adapter that bridges Hono + Aurelia and transforms them from "SPA + headless API" into a native **fullstack framework**.
 
 **Current Status:** Phase 1 (Core Renderer) complete with 1,789 lines of code, 32 test cases, and comprehensive documentation.
 
@@ -123,7 +123,7 @@ app.get('/dashboard', aurelia({
 
 ## What We're Proposing
 
-### Package: `@hono/aurelia-ssr`
+### Package: `@hono/aurelia`
 
 **Purpose:** Official adapter for SSR on Aurelia 2 + Hono
 
@@ -135,7 +135,7 @@ app.get('/dashboard', aurelia({
 - Comprehensive type safety
 - Production-grade error handling
 
-**Location:** `packages/hono-aurelia-ssr` (in this monorepo)
+**Location:** `packages/hono-aurelia` (in this monorepo)
 
 ### Current Deliverables (Phase 1: ✅ Complete)
 
@@ -276,15 +276,15 @@ app.get('/dashboard', aurelia({
 
 ### For Hono Team
 
-1. **Code Review** — `/packages/hono-aurelia-ssr/src/`
+1. **Code Review** — `/packages/hono-aurelia/src/`
    - Focus: Hono integration patterns
    - Question: Any missing Hono features?
 
-2. **API Design** — `/packages/hono-aurelia-ssr/README.md#api-reference`
+2. **API Design** — `/packages/hono-aurelia/README.md#api-reference`
    - Focus: Is the interface idiomatic Hono?
    - Question: Any improvements?
 
-3. **Test Scenarios** — `/packages/hono-aurelia-ssr/test/`
+3. **Test Scenarios** — `/packages/hono-aurelia/test/`
    - Question: What edge cases should we test?
 
 4. **Performance** — Check render times under load
@@ -310,7 +310,7 @@ app.get('/dashboard', aurelia({
 ## Questions for Both Teams
 
 ### Architecture
-- **Q:** Should this be `@hono/aurelia-ssr` or `@aurelia/hono-ssr` or both?
+- **Q:** Should this be `@hono/aurelia` or `@aurelia/hono-ssr` or both?
 - **A:** We recommend both (namespace-specific packages)
 
 ### Maintenance
@@ -374,7 +374,7 @@ app.get('/dashboard', aurelia({
 
 **PoC Maintainer:** Sandikodev (@sandikodev)  
 **Email:** androxoss@hotmail.com  
-**Repository:** `/packages/hono-aurelia-ssr/`  
+**Repository:** `/packages/hono-aurelia/`  
 
 **Documentation:**
 - `/PHASE_1_SUMMARY.md` — Implementation details

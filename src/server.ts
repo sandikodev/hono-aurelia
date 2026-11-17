@@ -1,5 +1,5 @@
 /**
- * @hono/aurelia-ssr Server Entrypoint
+ * @hono/aurelia Server Entrypoint
  */
 export * from '@aureliajs/ssr/server';
 export {

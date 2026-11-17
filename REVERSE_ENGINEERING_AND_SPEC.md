@@ -1,4 +1,4 @@
-# @hono/aurelia-ssr: Reverse Engineering Analysis & Architectural Specification
+# @hono/aurelia: Reverse Engineering Analysis & Architectural Specification
 
 **Document Version:** 2.0.0  
 **Status:** Living Engineering Blueprint & Community RFC Candidate  
@@ -13,7 +13,7 @@
 ## 1. Executive Summary & Problem Statement
 
 ### 1.1 The Problem in Existing Approaches
-In early iterations of `@hono/aurelia-ssr`, rendering was handled via a naive placeholder string replacement:
+In early iterations of `@hono/aurelia`, rendering was handled via a naive placeholder string replacement:
 ```typescript
 // ANTI-PATTERN (Current placeholder in render.ts)
 html = html.replace(/\{\{([^}]+)\}\}/g, (_match, prop) => {
@@ -110,7 +110,7 @@ Dwayne Charrington (Aurelia 2 Core Team Member) solved Aurelia 2 SSR in `Vheissu
 
 ---
 
-## 3. Target Architecture for `@hono/aurelia-ssr`
+## 3. Target Architecture for `@hono/aurelia`
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
@@ -235,7 +235,7 @@ The example application at `/home/dev/project/aureliajs/examples/fullstack-ssr` 
 ## 6. Community Proposal Strategy (Hono + Aurelia)
 
 ### 6.1 Proposal to Hono Community (`honojs/middleware`)
-- **Pitch**: Hono currently officially supports React (`@hono/react-renderer`). Adding `@hono/aurelia-ssr` brings a clean, enterprise-grade MVVM framework into the Hono ecosystem.
+- **Pitch**: Hono currently officially supports React (`@hono/react-renderer`). Adding `@hono/aurelia` brings a clean, enterprise-grade MVVM framework into the Hono ecosystem.
 - **Selling Points**:
   - Web-standards aligned.
   - Benchmarks showing competitive cold start and memory usage against React SSR.
@@ -255,7 +255,7 @@ The example application at `/home/dev/project/aureliajs/examples/fullstack-ssr` 
 - [x] Clone and reverse engineer `iflamed/hono-react-ssr-shadcn-ui`.
 - [x] Analyze `aurelia2-ssr` and request-scoped DOM execution patterns.
 - [x] Author comprehensive Reverse Engineering & Architecture Specification.
-- [ ] Implement `engine.ts` with real Aurelia 2 runtime rendering in `packages/hono-aurelia-ssr`.
+- [ ] Implement `engine.ts` with real Aurelia 2 runtime rendering in `packages/hono-aurelia`.
 - [ ] Update `examples/fullstack-ssr` to use real Aurelia 2 custom elements and Vite SSR pipeline.
 - [ ] Add end-to-end integration tests verifying SSR HTML output, hydration fidelity, and state transfer.
 - [ ] Prepare finalized RFC document for submission to maintainers.

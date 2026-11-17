@@ -1,5 +1,5 @@
 /**
- * @hono/aurelia-ssr Types
+ * @hono/aurelia Types
  * 
  * Hono-specific type definitions and re-exports of @aureliajs/ssr core types.
  */

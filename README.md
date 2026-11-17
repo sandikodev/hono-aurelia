@@ -1,8 +1,8 @@
-# @hono/aurelia-ssr
+# @hono/aurelia
 
 **Server-Side Rendering adapter for Aurelia 2 on Hono**
 
-[![npm version](https://img.shields.io/npm/v/@hono/aurelia-ssr.svg)](https://www.npmjs.com/package/@hono/aurelia-ssr)
+[![npm version](https://img.shields.io/npm/v/@hono/aurelia.svg)](https://www.npmjs.com/package/@hono/aurelia)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.6%2B-blue.svg)](https://www.typescriptlang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -13,7 +13,7 @@
 **Zero-config SSR** for Aurelia 2 components on Hono servers. Render React-like components on the server, hydrate them on the client, and prevent duplicate API calls.
 
 ```typescript
-import { aurelia } from '@hono/aurelia-ssr';
+import { aurelia } from '@hono/aurelia';
 import { DashboardPage } from './pages';
 
 app.get('/dashboard', aurelia({
@@ -29,7 +29,7 @@ app.get('/dashboard', aurelia({
 
 ---
 
-## Why @hono/aurelia-ssr?
+## Why @hono/aurelia?
 
 | Feature | Value |
 |---------|-------|
@@ -46,13 +46,13 @@ app.get('/dashboard', aurelia({
 ## Installation
 
 ```bash
-npm install @hono/aurelia-ssr aurelia hono
+npm install @hono/aurelia aurelia hono
 ```
 
 Or with pnpm:
 
 ```bash
-pnpm add @hono/aurelia-ssr aurelia hono
+pnpm add @hono/aurelia aurelia hono
 ```
 
 ---
@@ -81,7 +81,7 @@ export const HomePage = {
 ```typescript
 // src/index.ts
 import { Hono } from 'hono';
-import { aurelia } from '@hono/aurelia-ssr';
+import { aurelia } from '@hono/aurelia';
 import { HomePage } from './pages/home';
 
 const app = new Hono();
@@ -101,7 +101,7 @@ export default app;
 
 ```typescript
 // src/client.ts
-import { hydrateFromServer } from '@hono/aurelia-ssr';
+import { hydrateFromServer } from '@hono/aurelia';
 
 const result = hydrateFromServer();
 if (result) {
@@ -150,7 +150,7 @@ app.get('/page', aurelia({
 Extract server state on client.
 
 ```typescript
-import { hydrateFromServer } from '@hono/aurelia-ssr';
+import { hydrateFromServer } from '@hono/aurelia';
 
 const result = hydrateFromServer({
   maxAge: 30000,      // Reject if older than 30s
@@ -170,7 +170,7 @@ if (result) {
 Persist hydrated data in sessionStorage.
 
 ```typescript
-import { HydrationCache } from '@hono/aurelia-ssr';
+import { HydrationCache } from '@hono/aurelia';
 
 const cache = new HydrationCache();
 
@@ -195,7 +195,7 @@ cache.clear();
 Auto-extract auth context from requests.
 
 ```typescript
-import { createAuthMiddleware } from '@hono/aurelia-ssr';
+import { createAuthMiddleware } from '@hono/aurelia';
 
 app.use(
   createAuthMiddleware({
@@ -225,7 +225,7 @@ app.get('/dashboard', aurelia({
 Share config across multiple routes.
 
 ```typescript
-import { createAureliaRouteGroup } from '@hono/aurelia-ssr';
+import { createAureliaRouteGroup } from '@hono/aurelia';
 
 const publicPages = createAureliaRouteGroup({
   fallback: 'error'
@@ -320,7 +320,7 @@ Dashboard (3 parallel loaders):
 
 ### Compared to Next.js 15
 
-| Metric | @hono/aurelia-ssr | Next.js 15 |
+| Metric | @hono/aurelia | Next.js 15 |
 |--------|-------------------|-----------|
 | TTFB | 45-145ms | 180-220ms |
 | FCP | 180-220ms | 320-520ms |
@@ -347,7 +347,7 @@ Dashboard (3 parallel loaders):
 
 ### When to Use
 
-Use **@hono/aurelia-ssr** when:
+Use **@hono/aurelia** when:
 - Learning SSR concepts
 - Building quickly
 - Type safety matters

@@ -1,5 +1,5 @@
 {
-  "name": "@hono/aurelia-ssr",
+  "name": "@hono/aurelia",
   "version": "1.0.0-alpha.1",
   "description": "Server-side rendering adapter for Aurelia 2 on Hono",
   "type": "module",

@@ -1,12 +1,12 @@
 /**
- * @hono/aurelia-ssr Route Adapter
+ * @hono/aurelia Route Adapter
  * 
  * High-level Hono middleware and route handler factory for Aurelia SSR.
  * Handles content negotiation, data loading, auth guards, and fallbacks.
  * 
  * @example
  * ```typescript
- * import { aurelia } from '@hono/aurelia-ssr';
+ * import { aurelia } from '@hono/aurelia';
  * import { DashboardPage } from './pages';
  * 
  * app.get('/dashboard', 

@@ -1,4 +1,4 @@
-# @hono/aurelia-ssr — Submission Checklist
+# @hono/aurelia — Submission Checklist
 
 **Ready for proposal submission to Hono maintainers**
 
@@ -170,7 +170,7 @@ Team Onboarding:                 2 hours
 ## Comparison with Alternatives
 
 ### vs Next.js 15
-| Metric | @hono/aurelia-ssr | Next.js |
+| Metric | @hono/aurelia | Next.js |
 |--------|-------------------|---------|
 | Setup | 5 min ✅ | 10 min |
 | FCP | 180ms ✅ | 320ms |
@@ -180,7 +180,7 @@ Team Onboarding:                 2 hours
 | Vendor Lock-in | None ✅ | Vercel |
 
 ### vs SvelteKit
-| Metric | @hono/aurelia-ssr | SvelteKit |
+| Metric | @hono/aurelia | SvelteKit |
 |--------|-------------------|----------|
 | Setup | 5 min ✅ | 8 min |
 | FCP | 180ms ✅ | 240ms |
@@ -299,7 +299,7 @@ This library is ready to be submitted to Hono maintainers as a proposal because:
 ## Files Ready for Submission
 
 ```
-packages/hono-aurelia-ssr/
+packages/hono-aurelia/
 ├── src/
 │   ├── render.ts       ✅
 │   ├── serialize.ts    ✅

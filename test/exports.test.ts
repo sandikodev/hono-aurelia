@@ -3,7 +3,7 @@ import * as Root from '../src/index.js';
 import * as Server from '../src/server.js';
 import * as Client from '../src/client.js';
 
-describe('@hono/aurelia-ssr exports contract', () => {
+describe('@hono/aurelia exports contract', () => {
   it('exposes core SSR and Hono adapter functions at root (.)', () => {
     expect(Root.aurelia).toBeDefined();
     expect(Root.createAuthMiddleware).toBeDefined();

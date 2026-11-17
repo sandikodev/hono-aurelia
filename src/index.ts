@@ -1,5 +1,5 @@
 /**
- * @hono/aurelia-ssr
+ * @hono/aurelia
  * 
  * Server-side rendering adapter for Aurelia 2 on Hono.
  * Built on top of @aureliajs/ssr.

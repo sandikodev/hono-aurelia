@@ -1,4 +1,4 @@
-# Submission Guide: @hono/aurelia-ssr to Hono & Aurelia Teams
+# Submission Guide: @hono/aurelia to Hono & Aurelia Teams
 
 This guide explains how to present and propose this package to both maintainer teams.
 
@@ -33,7 +33,7 @@ Send identical/adapted proposals to both teams **simultaneously**:
 ### What to Say
 
 ```markdown
-## Proposal: @hono/aurelia-ssr — Native SSR Support
+## Proposal: @hono/aurelia — Native SSR Support
 
 Hi Hono team! 👋
 
@@ -59,7 +59,7 @@ collaboration potential.
 3. **Collaboration** — Would you be interested in adopting this?
 
 ### Resources
-- Code: `/packages/hono-aurelia-ssr/`
+- Code: `/packages/hono-aurelia/`
 - Proposal: `PROPOSAL_TO_MAINTAINERS.md`
 - Docs: `README.md` + `PHASE_1_SUMMARY.md`
 
@@ -117,7 +117,7 @@ collaboration potential.
 4. **Collaboration** — Would you feature this officially?
 
 ### Resources
-- Code: `/packages/hono-aurelia-ssr/`
+- Code: `/packages/hono-aurelia/`
 - Proposal: `PROPOSAL_TO_MAINTAINERS.md`
 - Docs: `README.md` + `PHASE_1_SUMMARY.md`
 
@@ -154,7 +154,7 @@ We're asking for your feedback on:
 2. API design (any improvements?)
 3. Potential collaboration (adoption, versioning, co-maintenance?)
 
-Repository: https://github.com/[your-account]/aureliajs/packages/hono-aurelia-ssr
+Repository: https://github.com/[your-account]/aureliajs/packages/hono-aurelia
 Proposal: See PROPOSAL_TO_MAINTAINERS.md in repository
 
 We believe this benefits both ecosystems and would love to hear 
@@ -271,8 +271,8 @@ A: Publish anyway. Community will find it. Keep improving.
 **Q: Can we license as Apache 2.0 instead of MIT?**  
 A: Yes, but MIT is more friendly for adoption.
 
-**Q: Should we fork into @sandikodev/hono-aurelia-ssr first?**  
-A: No. Publish as @hono/aurelia-ssr immediately (or propose official naming).
+**Q: Should we fork into @sandikodev/hono-aurelia first?**  
+A: No. Publish as @hono/aurelia immediately (or propose official naming).
 
 ---
 

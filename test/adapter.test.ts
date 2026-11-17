@@ -1,5 +1,5 @@
 /**
- * @hono/aurelia-ssr Adapter Tests
+ * @hono/aurelia Adapter Tests
  * 
  * Tests for aurelia() route handler factory, content negotiation,
  * data loading, auth guards, and error handling.
@@ -745,7 +745,7 @@ describe('integration scenarios', () => {
       expect(res.headers.get('content-type')).toContain('application/octet-stream');
       expect(res.headers.get('cache-control')).toContain('public');
       const body = await res.text();
-      expect(body).toContain('@hono/aurelia-ssr Adapter Tests');
+      expect(body).toContain('@hono/aurelia Adapter Tests');
     });
 
     it('dispatches mutations to co-located static actions on POST/PUT/DELETE', async () => {
