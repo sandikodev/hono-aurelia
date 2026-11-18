@@ -1,802 +1,444 @@
-/**
- * @hono/aurelia Adapter Tests
- * 
- * Tests for aurelia() route handler factory, content negotiation,
- * data loading, auth guards, and error handling.
- */
-
-import { describe, it, expect, vi, beforeEach } from 'bun:test';
+import { describe, it, expect } from 'bun:test';
 import { Hono } from 'hono';
-import {
-  aurelia,
-  aureliaDefaults,
-  serveAureliaAssets,
-} from '../src/adapter';
+import { CustomElement } from 'aurelia';
+import { aurelia, aureliaAction, aureliaDefaults } from '../src/adapter.js';
 
-// Mock component
-const MockComponent = {
-  name: 'MockPage',
-  template: '<div>Mock Content</div>',
-  render: () => '<div>Mock Content</div>',
-};
+const SimplePage = CustomElement.define(
+  {
+    name: 'simple-page',
+    template: '<main><h1>${heading}</h1><p>${message}</p></main>',
+  },
+  class SimplePage {
+    heading = 'Hello Aurelia';
+    message = 'Pure SSR';
+  }
+);
 
-describe('aurelia() route handler', () => {
-  let app: Hono;
+describe('@hono/aurelia adapter', () => {
+  describe('SSR rendering & shorthand', () => {
+    it('renders HTML by default via shorthand signature aurelia(Component, title)', async () => {
+      const app = new Hono();
+      app.get('/', aurelia(SimplePage, 'Home Title'));
 
-  beforeEach(() => {
-    app = new Hono();
-  });
+      const res = await app.request('/');
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-type')).toContain('text/html');
 
-  describe('basic rendering', () => {
-    it('renders HTML by default', async () => {
+      const html = await res.text();
+      expect(html).toContain('<!DOCTYPE html>');
+      expect(html).toContain('<title>Home Title</title>');
+      expect(html).toContain('Hello Aurelia');
+      expect(html).toContain('window.__HYDRATION__');
+      expect(html).toContain('"component":"simple-page"');
+    });
+
+    it('renders HTML via full config object with custom document options', async () => {
+      const app = new Hono();
       app.get(
-        '/page',
+        '/custom',
         aurelia({
-          component: MockComponent,
-          title: 'Test Page',
+          component: SimplePage,
+          title: 'Custom Shell',
+          document: {
+            lang: 'id',
+            rootTag: 'my-root',
+            cssBundle: '/assets/app.css',
+            jsBundle: '/assets/app.js',
+          },
         })
       );
 
-      const res = await app.request('/page', { headers: { 'Accept': 'text/html' } });
+      const res = await app.request('/custom');
       expect(res.status).toBe(200);
       const html = await res.text();
-      expect(html).toContain('Mock Content');
+      expect(html).toContain('<html lang="id">');
+      expect(html).toContain('<my-root>');
+      expect(html).toContain('href="/assets/app.css"');
+      expect(html).toContain('src="/assets/app.js"');
     });
 
-    it('handles missing component gracefully', async () => {
+    it('streams chunked HTML when streaming: true', async () => {
+      const app = new Hono();
       app.get(
-        '/error',
+        '/stream',
         aurelia({
-          component: undefined as any,
-          title: 'Error Page',
+          component: SimplePage,
+          title: 'Streamed',
+          streaming: true,
         })
       );
 
-      const res = await app.request('/error', { headers: { 'Accept': 'text/html' } });
-      expect(res.status).toBe(500);
-    });
-
-    it('includes title in HTML document', async () => {
-      app.get(
-        '/titled',
-        aurelia({
-          component: MockComponent,
-          title: 'Custom Title',
-        })
-      );
-    });
-  });
-
-  describe('content negotiation', () => {
-    it('returns JSON when Accept: application/json', async () => {
-      const handler = aurelia({
-        component: MockComponent,
-        title: 'API Page',
-      });
-
-      // Simulate request with JSON accept header
-      expect(handler).toBeDefined();
-    });
-
-    it('returns HTML when Accept: text/html', async () => {
-      const handler = aurelia({
-        component: MockComponent,
-        title: 'HTML Page',
-      });
-
-      expect(handler).toBeDefined();
-    });
-
-    it('prefers JSON over HTML when q-values differ', async () => {
-      const handler = aurelia({
-        component: MockComponent,
-        title: 'Negotiated Page',
-      });
-
-      expect(handler).toBeDefined();
-    });
-
-    it('returns 406 when Accept header is incompatible', async () => {
-      const handler = aurelia({
-        component: MockComponent,
-        title: 'Not Acceptable',
-      });
-
-      expect(handler).toBeDefined();
-    });
-
-    it('defaults to HTML when Accept header is missing', async () => {
-      const handler = aurelia({
-        component: MockComponent,
-        title: 'Default Page',
-      });
-
-      expect(handler).toBeDefined();
-    });
-
-    it('handles wildcard Accept header', async () => {
-      const handler = aurelia({
-        component: MockComponent,
-        title: 'Wildcard Page',
-      });
-
-      expect(handler).toBeDefined();
-    });
-  });
-
-  describe('authentication', () => {
-    it('allows unauthenticated access when requiresAuth is false', async () => {
-      const handler = aurelia({
-        component: MockComponent,
-        title: 'Public Page',
-        requiresAuth: false,
-      });
-
-      expect(handler).toBeDefined();
-    });
-
-    it('returns 401 when requiresAuth is true and user is null', async () => {
-      const handler = aurelia({
-        component: MockComponent,
-        title: 'Protected Page',
-        requiresAuth: true,
-      });
-
-      expect(handler).toBeDefined();
-    });
-
-    it('allows access when requiresAuth is true and user exists', async () => {
-      const handler = aurelia({
-        component: MockComponent,
-        title: 'Protected Page',
-        requiresAuth: true,
-      });
-
-      expect(handler).toBeDefined();
-    });
-
-    it('includes user data in hydration payload', async () => {
-      const handler = aurelia({
-        component: MockComponent,
-        title: 'Auth Page',
-        requiresAuth: true,
-      });
-
-      expect(handler).toBeDefined();
-    });
-  });
-
-  describe('data loading', () => {
-    it('executes loaders and includes data in response', async () => {
-      const loader = vi.fn(async () => ({ stats: [1, 2, 3] }));
-
-      const handler = aurelia({
-        component: MockComponent,
-        title: 'Data Page',
-        loaders: {
-          stats: loader,
-        },
-      });
-
-      expect(handler).toBeDefined();
-    });
-
-    it('executes multiple loaders in parallel', async () => {
-      const loaders = {
-        stats: vi.fn(async () => ({ value: 1 })),
-        users: vi.fn(async () => ({ count: 5 })),
-      };
-
-      const handler = aurelia({
-        component: MockComponent,
-        title: 'Multi-Loader Page',
-        loaders,
-      });
-
-      expect(handler).toBeDefined();
-    });
-
-    it('handles loader errors gracefully', async () => {
-      const handler = aurelia({
-        component: MockComponent,
-        title: 'Error Loader Page',
-        loaders: {
-          failing: async () => {
-            throw new Error('Loader failed');
-          },
-        },
-      });
-
-      expect(handler).toBeDefined();
-    });
-
-    it('returns 500 on loader error when fallback is error', async () => {
-      const handler = aurelia({
-        component: MockComponent,
-        title: 'Error Handler Page',
-        loaders: {
-          data: async () => {
-            throw new Error('Failed');
-          },
-        },
-        fallback: 'error',
-      });
-
-      expect(handler).toBeDefined();
-    });
-
-    it('continues with empty data on loader error when fallback is spa', async () => {
-      const handler = aurelia({
-        component: MockComponent,
-        title: 'SPA Fallback Page',
-        loaders: {
-          data: async () => {
-            throw new Error('Failed');
-          },
-        },
-        fallback: 'spa',
-      });
-
-      expect(handler).toBeDefined();
-    });
-
-    it('handles no loaders gracefully', async () => {
-      const handler = aurelia({
-        component: MockComponent,
-        title: 'No Loaders Page',
-      });
-
-      expect(handler).toBeDefined();
-    });
-  });
-
-  describe('error handling', () => {
-    it('catches rendering errors', async () => {
-      const badComponent = {
-        name: 'BadComponent',
-        render: () => {
-          throw new Error('Render failed');
-        },
-      };
-
-      const handler = aurelia({
-        component: badComponent,
-        title: 'Error Page',
-      });
-
-      expect(handler).toBeDefined();
-    });
-
-    it('returns error HTML on render failure', async () => {
-      const handler = aurelia({
-        component: MockComponent,
-        title: 'Error Page',
-      });
-
-      expect(handler).toBeDefined();
-    });
-
-    it('returns SPA fallback on render error when configured', async () => {
-      const handler = aurelia({
-        component: MockComponent,
-        title: 'SPA Fallback',
-        fallback: 'spa',
-      });
-
-      expect(handler).toBeDefined();
-    });
-
-    it('handles unexpected errors in route handler', async () => {
-      const handler = aurelia({
-        component: MockComponent,
-        title: 'Unknown Error Page',
-      });
-
-      expect(handler).toBeDefined();
-    });
-  });
-
-  describe('context extraction', () => {
-    it('extracts user from context', async () => {
-      const handler = aurelia({
-        component: MockComponent,
-        title: 'User Context Page',
-      });
-
-      expect(handler).toBeDefined();
-    });
-
-    it('extracts workspace from context', async () => {
-      const handler = aurelia({
-        component: MockComponent,
-        title: 'Workspace Context Page',
-      });
-
-      expect(handler).toBeDefined();
-    });
-
-    it('extracts role from context', async () => {
-      const handler = aurelia({
-        component: MockComponent,
-        title: 'Role Context Page',
-      });
-
-      expect(handler).toBeDefined();
-    });
-
-    it('handles missing context fields', async () => {
-      const handler = aurelia({
-        component: MockComponent,
-        title: 'Partial Context Page',
-      });
-
-      expect(handler).toBeDefined();
-    });
-
-    it('sets isAuthenticated flag correctly', async () => {
-      const handler = aurelia({
-        component: MockComponent,
-        title: 'Auth Flag Page',
-      });
-
-      expect(handler).toBeDefined();
-    });
-  });
-
-  describe('hydration payload', () => {
-    it('includes component name in payload', async () => {
-      const handler = aurelia({
-        component: MockComponent,
-        title: 'Payload Page',
-      });
-
-      expect(handler).toBeDefined();
-    });
-
-    it('includes context in payload', async () => {
-      const handler = aurelia({
-        component: MockComponent,
-        title: 'Context Payload Page',
-      });
-
-      expect(handler).toBeDefined();
-    });
-
-    it('includes initial data from loaders', async () => {
-      const handler = aurelia({
-        component: MockComponent,
-        title: 'Data Payload Page',
-        loaders: {
-          stats: async () => ({ value: 42 }),
-        },
-      });
-
-      expect(handler).toBeDefined();
-    });
-
-    it('includes timestamp in payload', async () => {
-      const handler = aurelia({
-        component: MockComponent,
-        title: 'Timestamp Payload Page',
-      });
-
-      expect(handler).toBeDefined();
-    });
-  });
-});
-
-describe('content negotiation utility', () => {
-  it('parses q-values correctly', () => {
-    // Test coverage for extractQValue
-    const acceptHeader = 'text/html;q=0.9, application/json;q=1.0';
-    expect(acceptHeader).toContain('q=');
-  });
-
-  it('handles complex Accept headers', () => {
-    const acceptHeader = 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8';
-    expect(acceptHeader).toBeDefined();
-  });
-
-  it('defaults q-value to 1 when not specified', () => {
-    const acceptHeader = 'text/html';
-    expect(acceptHeader).not.toContain('q=');
-  });
-
-  it('ignores invalid q-values', () => {
-    const acceptHeader = 'text/html;q=invalid';
-    expect(acceptHeader).toBeDefined();
-  });
-});
-
-describe('data loader utility', () => {
-  it('executes loaders in parallel', async () => {
-    const timestamps: number[] = [];
-
-    const loaders = {
-      loader1: async () => {
-        timestamps.push(Date.now());
-        await new Promise((r) => setTimeout(r, 10));
-        return { data: 1 };
-      },
-      loader2: async () => {
-        timestamps.push(Date.now());
-        await new Promise((r) => setTimeout(r, 10));
-        return { data: 2 };
-      },
-    };
-
-    expect(loaders).toBeDefined();
-  });
-
-  it('handles partial loader failures', async () => {
-    const loaders = {
-      success: async () => ({ value: 1 }),
-      failure: async () => {
-        throw new Error('Failed');
-      },
-    };
-
-    expect(loaders).toBeDefined();
-  });
-
-  it('logs loader errors', async () => {
-    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-
-    const loaders = {
-      failing: async () => {
-        throw new Error('Loader error');
-      },
-    };
-
-    expect(loaders).toBeDefined();
-    consoleErrorSpy.mockRestore();
-  });
-});
-
-describe('integration scenarios', () => {
-  it('full flow: auth + loaders + rendering', async () => {
-    const app = new Hono();
-
-    app.get(
-      '/dashboard',
-      aurelia({
-        component: MockComponent,
-        title: 'Dashboard',
-        requiresAuth: true,
-        loaders: {
-          stats: async () => ({ count: 5 }),
-          users: async () => ({ total: 10 }),
-        },
-      })
-    );
-
-    expect(app).toBeDefined();
-  });
-
-  it('public page with data loading', async () => {
-    const app = new Hono();
-
-    app.get(
-      '/public',
-      aurelia({
-        component: MockComponent,
-        title: 'Public Page',
-        requiresAuth: false,
-        loaders: {
-          posts: async () => [{ id: 1, title: 'Post 1' }],
-        },
-      })
-    );
-
-    expect(app).toBeDefined();
-  });
-
-  it('scoped defaults middleware', async () => {
-    const app = new Hono();
-    app.use('/admin/*', aureliaDefaults({ fallback: 'spa' }));
-    app.get('/admin/profile', aurelia(MockComponent, 'Profile'));
-    expect(app).toBeDefined();
-  });
-
-  it('supports streaming SSR with chunked transfer response', async () => {
-    const app = new Hono();
-    app.get(
-      '/stream-test',
-      aurelia({
-        component: MockComponent,
-        title: 'Streaming Page',
-        streaming: true,
-      })
-    );
-
-    const res = await app.request('/stream-test', {
-      headers: { Accept: 'text/html' },
-    });
-
-    expect(res.status).toBe(200);
-    expect(res.headers.get('content-type')).toContain('text/html');
-    const text = await res.text();
-    expect(text).toContain('<!DOCTYPE html>');
-    expect(text).toContain('Streaming Page');
-    expect(text).toContain('</body>');
-    expect(text).toContain('</html>');
-  });
-
-  describe('co-located route loaders & ergonomic shorthand', () => {
-    it('supports aurelia(Component, "Title") direct signature', async () => {
-      const app = new Hono();
-      app.get('/shorthand', aurelia(MockComponent, 'Shorthand Page'));
-
-      const res = await app.request('/shorthand', {
-        headers: { Accept: 'text/html' },
-      });
-
-      expect(res.status).toBe(200);
-      const text = await res.text();
-      expect(text).toContain('Shorthand Page');
-      expect(text).toContain('Mock Content');
-    });
-
-    it('executes static async loader(c) co-located on component class', async () => {
-      class ArticleDetailPage {
-        static name = 'ArticleDetail';
-        static title = 'Article Detail';
-        static async loader(c: any) {
-          const slug = c.req.param('slug');
-          return {
-            article: { slug, title: `Article for ${slug}` },
-          };
-        }
-      }
-
-      const app = new Hono();
-      app.get('/articles/:slug', aurelia(ArticleDetailPage));
-
-      // Test JSON content negotiation
-      const jsonRes = await app.request('/articles/deep-dive', {
-        headers: { Accept: 'application/json' },
-      });
-
-      expect(jsonRes.status).toBe(200);
-      const data = await jsonRes.json() as any;
-      expect(data.component).toBe('ArticleDetail');
-      expect(data.initialData.article).toEqual({
-        slug: 'deep-dive',
-        title: 'Article for deep-dive',
-      });
-
-      // Test HTML hydration payload inclusion
-      const htmlRes = await app.request('/articles/deep-dive', {
-        headers: { Accept: 'text/html' },
-      });
-      const html = await htmlRes.text();
-      expect(html).toContain('Article Detail');
-      expect(html).toContain('deep-dive');
-    });
-
-    it('respects static requiresAuth = true on component class', async () => {
-      class SecureSettingsPage {
-        static name = 'SecureSettings';
-        static requiresAuth = true;
-      }
-
-      const app = new Hono();
-      app.get('/settings', aurelia(SecureSettingsPage));
-
-      // Unauthenticated request should yield 401
-      const res = await app.request('/settings');
-      expect(res.status).toBe(401);
-      const body = await res.json() as any;
-      expect(body.error).toBe('Unauthorized');
-    });
-
-    it('inherits document and streaming settings from aureliaDefaults middleware', async () => {
-      const app = new Hono();
-      app.use('*', aureliaDefaults({
-        document: {
-          cssBundle: '/static/theme.css',
-          jsBundle: '/static/bundle.js',
-        },
-        streaming: true,
-      }));
-
-      // Route defined as a pure one-liner without repeating document config
-      app.get('/clean-route', aurelia(MockComponent, 'Clean Title'));
-
-      const res = await app.request('/clean-route', {
-        headers: { Accept: 'text/html' },
-      });
-
+      const res = await app.request('/stream');
       expect(res.status).toBe(200);
       expect(res.headers.get('content-type')).toContain('text/html');
       expect(res.headers.get('transfer-encoding')).toBe('chunked');
-      const text = await res.text();
-      expect(text).toContain('Clean Title');
-      expect(text).toContain('/static/theme.css');
-      expect(text).toContain('/static/bundle.js');
+      const html = await res.text();
+      expect(html).toContain('<title>Streamed</title>');
+      expect(html).toContain('Pure SSR');
     });
+  });
 
-    it('serves static assets via serveAureliaAssets middleware', async () => {
-      const app = new Hono();
-      app.use('/public/*', serveAureliaAssets({
-        root: import.meta.dir,
-        prefix: '/public',
-      }));
-
-      // Probe adapter.test.ts itself through static server
-      const res = await app.request('/public/adapter.test.ts');
-      expect(res.status).toBe(200);
-      expect(res.headers.get('content-type')).toContain('application/octet-stream');
-      expect(res.headers.get('cache-control')).toContain('public');
-      const body = await res.text();
-      expect(body).toContain('@hono/aurelia Adapter Tests');
-    });
-
-    it('dispatches mutations to co-located static actions on POST/PUT/DELETE', async () => {
-      const app = new Hono();
-
-      class ActionComponent {
-        static name = 'ActionPage';
-        static title = 'Actions Test';
-        static actions = {
-          like: async (c: any) => {
-            expect(c).toBeDefined();
-            return { success: true, count: 42 };
-          },
-          comment: async (c: any) => {
-            const body = await c.req.json();
-            return { success: true, author: body.author };
-          },
-        };
-      }
-
-      app.all('/posts/:slug', aurelia(ActionComponent));
-
-      // 1. Query parameter dispatch: ?_action=like
-      const resLike = await app.request('/posts/test-post?_action=like', {
-        method: 'POST',
-      });
-      expect(resLike.status).toBe(200);
-      const dataLike = await resLike.json() as any;
-      expect(dataLike).toEqual({ success: true, count: 42 });
-
-      // 2. Header dispatch: X-Action: like
-      const resHeader = await app.request('/posts/test-post', {
-        method: 'POST',
-        headers: { 'X-Action': 'like' },
-      });
-      expect(resHeader.status).toBe(200);
-      const dataHeader = await resHeader.json() as any;
-      expect(dataHeader).toEqual({ success: true, count: 42 });
-
-      // 3. JSON body action dispatch: { action: 'comment', author: 'Sandikodev' }
-      const resComment = await app.request('/posts/test-post', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'comment', author: 'Sandikodev' }),
-      });
-      expect(resComment.status).toBe(200);
-      const dataComment = await resComment.json() as any;
-      expect(dataComment).toEqual({ success: true, author: 'Sandikodev' });
-
-      // 4. Unknown action returns 404
-      const resUnknown = await app.request('/posts/test-post?_action=unknown', {
-        method: 'POST',
-      });
-      expect(resUnknown.status).toBe(404);
-
-      // 5. Component without actions returns 405 Method Not Allowed
-      const appNoAction = new Hono();
-      appNoAction.all('/no-actions', aurelia(MockComponent));
-      const resNoAction = await appNoAction.request('/no-actions', {
-        method: 'POST',
-      });
-      expect(resNoAction.status).toBe(405);
-    });
-
-    it('immediately returns Response when loader returns redirect or response', async () => {
-      const app = new Hono();
-
-      class RedirectComponent {
-        static name = 'RedirectPage';
-        static async loader(c: any) {
-          return c.redirect('/login');
+  describe('loaders, dynamic title, and dynamic status', () => {
+    it('executes co-located static loader(c) and injects loaded props into SSR', async () => {
+      const ArticlePage = CustomElement.define(
+        {
+          name: 'article-page',
+          template: '<article><h1>${article.title}</h1></article>',
+        },
+        class {
+          article = { title: '' };
+          static title = (data: { article?: { title: string } }) =>
+            data.article ? `${data.article.title} — Blog` : 'Not Found';
+          static status = (data: { article?: unknown }) => (data.article ? 200 : 404);
+          static async loader(c: { req: { param: (k: string) => string } }) {
+            const slug = c.req.param('slug');
+            if (slug === 'missing') return { article: null };
+            return { article: { title: `Guide to ${slug}` } };
+          }
         }
-      }
+      );
 
-      app.get('/protected-resource', aurelia(RedirectComponent));
+      const app = new Hono();
+      app.get('/articles/:slug', aurelia(ArticlePage));
 
-      const res = await app.request('/protected-resource');
+      const okRes = await app.request('/articles/aurelia-2');
+      expect(okRes.status).toBe(200);
+      const okHtml = await okRes.text();
+      expect(okHtml).toContain('<title>Guide to aurelia-2 — Blog</title>');
+      expect(okHtml).toContain('Guide to aurelia-2');
+
+      const missingRes = await app.request('/articles/missing');
+      expect(missingRes.status).toBe(404);
+      const missingHtml = await missingRes.text();
+      expect(missingHtml).toContain('<title>Not Found</title>');
+    });
+
+    it('executes multiple route loaders in parallel', async () => {
+      const DashboardComp = CustomElement.define(
+        {
+          name: 'dash-comp',
+          template: '<div>${metrics.count} / ${region.name}</div>',
+        },
+        class {
+          metrics = { count: 0 };
+          region = { name: '' };
+        }
+      );
+
+      const app = new Hono();
+      app.get(
+        '/dash',
+        aurelia({
+          component: DashboardComp,
+          loaders: {
+            metrics: async () => ({ count: 42 }),
+            region: async () => ({ name: 'ap-southeast-1' }),
+          },
+        })
+      );
+
+      const res = await app.request('/dash');
+      expect(res.status).toBe(200);
+      const html = await res.text();
+      expect(html).toContain('42');
+      expect(html).toContain('ap-southeast-1');
+    });
+
+    it('short-circuits SSR when loader returns a Response (e.g., redirect)', async () => {
+      const app = new Hono();
+      app.get(
+        '/private',
+        aurelia({
+          component: SimplePage,
+          loader: (c) => c.redirect('/login', 302),
+        })
+      );
+
+      const res = await app.request('/private');
       expect(res.status).toBe(302);
       expect(res.headers.get('location')).toBe('/login');
     });
+  });
 
-    it('evaluates dynamic title function based on loaded data', async () => {
-      const app = new Hono();
+  describe('composable Hono middleware & context isolation', () => {
+    it('composes cleanly with standard Hono auth middleware without parallel auth flags', async () => {
+      type Env = { Variables: { tenant: string; actor: { name: string } } };
+      const app = new Hono<Env>();
 
-      class DynamicTitleComponent {
-        static name = 'DynamicTitlePage';
-        static title = (data: any) => `${data.post?.title} — Engineering Blog`;
-        static async loader() {
-          return { post: { title: 'Advanced Aurelia 2 Architecture' } };
+      const requireActor = async (
+        c: Parameters<Parameters<typeof app.use>[1]>[0],
+        next: () => Promise<void>
+      ) => {
+        const token = c.req.header('Authorization');
+        if (token !== 'Bearer valid') {
+          return c.json({ error: 'Unauthorized' }, 401);
         }
-      }
+        c.set('tenant', 'acme');
+        c.set('actor', { name: 'Sandiko' });
+        await next();
+        return undefined;
+      };
 
-      app.get('/articles/advanced', aurelia(DynamicTitleComponent));
+      const TenantPage = CustomElement.define(
+        {
+          name: 'tenant-page',
+          template: '<section>${tenant}: ${actor.name}</section>',
+        },
+        class {
+          tenant = '';
+          actor = { name: '' };
+        }
+      );
 
-      const res = await app.request('/articles/advanced', {
-        headers: { Accept: 'text/html' },
+      app.get('/workspace', requireActor, aurelia(TenantPage));
+
+      const denied = await app.request('/workspace');
+      expect(denied.status).toBe(401);
+
+      const allowed = await app.request('/workspace', {
+        headers: { Authorization: 'Bearer valid' },
       });
-      expect(res.status).toBe(200);
-      const html = await res.text();
-      expect(html).toContain('Advanced Aurelia 2 Architecture — Engineering Blog');
+      expect(allowed.status).toBe(200);
+      const html = await allowed.text();
+      expect(html).toContain('acme');
+      expect(html).toContain('Sandiko');
     });
 
-    it('respects dynamic HTTP status code from component or loader', async () => {
-      const app = new Hono();
+    it('isolates aureliaDefaults per Hono app and strips internal keys from hydration context', async () => {
+      const appA = new Hono();
+      appA.use(
+        '*',
+        aureliaDefaults({
+          document: { cssBundle: '/a.css', jsBundle: '/a.js' },
+          dataEndpoint: true,
+        })
+      );
+      appA.get('/', aurelia(SimplePage));
 
-      class NotFoundComponent {
-        static name = 'NotFoundArticle';
-        static status = (data: any) => data.post ? 200 : 404;
-        static title = (data: any) => data.post ? 'Found' : 'Article Not Found';
-        static async loader() {
-          return { post: null };
-        }
-      }
+      const appB = new Hono();
+      appB.get('/', aurelia(SimplePage));
 
-      app.get('/missing-article', aurelia(NotFoundComponent));
-
-      const res = await app.request('/missing-article', {
-        headers: { Accept: 'text/html' },
+      const resAJson = await appA.request('/', {
+        headers: { Accept: 'application/json' },
       });
-      expect(res.status).toBe(404);
-      const html = await res.text();
-      expect(html).toContain('Article Not Found');
+      expect(resAJson.status).toBe(200);
+      const bodyA = (await resAJson.json()) as { context: Record<string, unknown> };
+      expect(bodyA.context.__aurelia_defaults).toBeUndefined();
+
+      // App B must NOT inherit app A's defaults (zero global mutable state!)
+      const resB = await appB.request('/', {
+        headers: { Accept: 'application/json' },
+      });
+      expect(resB.headers.get('content-type')).toContain('text/html');
+      const htmlB = await resB.text();
+      expect(htmlB).not.toContain('/a.css');
     });
 
-    it('supports custom authGuard and onUnauthorized hooks in route config', async () => {
+    it('supports custom context extractor hook', async () => {
       const app = new Hono();
-
       app.get(
-        '/custom-guarded',
+        '/locale',
         aurelia({
-          component: MockComponent,
-          requiresAuth: true,
-          authGuard: (c) => c.req.header('X-Custom-Auth') === 'secret-token',
-          onUnauthorized: () => new Response('Custom Access Denied', { status: 403 }),
+          component: SimplePage,
+          dataEndpoint: true,
+          context: (c) => ({ locale: c.req.header('Accept-Language') ?? 'en' }),
         })
       );
 
-      // Request without header -> blocked with custom 403 Response
-      const blockedRes = await app.request('/custom-guarded');
-      expect(blockedRes.status).toBe(403);
-      expect(await blockedRes.text()).toBe('Custom Access Denied');
-
-      // Request with header -> allowed
-      const allowedRes = await app.request('/custom-guarded', {
+      const res = await app.request('/locale', {
         headers: {
-          'X-Custom-Auth': 'secret-token',
-          Accept: 'text/html',
+          Accept: 'application/json',
+          'Accept-Language': 'id-ID',
         },
       });
-      expect(allowedRes.status).toBe(200);
+      const data = (await res.json()) as { context: { locale: string } };
+      expect(data.context.locale).toBe('id-ID');
+    });
+  });
+
+  describe('opt-in dataEndpoint content negotiation', () => {
+    it('serves HTML by default even when Accept: application/json is sent (opt-in safety)', async () => {
+      const app = new Hono();
+      app.get('/', aurelia(SimplePage));
+
+      const res = await app.request('/', {
+        headers: { Accept: 'application/json' },
+      });
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-type')).toContain('text/html');
     });
 
-    it('supports custom authGuard directly returning a redirect Response', async () => {
+    it('negotiates JSON vs HTML via q-values when dataEndpoint: true', async () => {
       const app = new Hono();
-
       app.get(
-        '/guard-redirect',
+        '/items',
         aurelia({
-          component: MockComponent,
-          requiresAuth: true,
-          authGuard: (c) => c.redirect('/auth/login', 302),
+          component: SimplePage,
+          dataEndpoint: true,
+          loader: async () => ({ items: [1, 2, 3] }),
         })
       );
 
-      const res = await app.request('/guard-redirect');
-      expect(res.status).toBe(302);
-      expect(res.headers.get('location')).toBe('/auth/login');
+      const jsonRes = await app.request('/items', {
+        headers: { Accept: 'text/html;q=0.5, application/json;q=0.9' },
+      });
+      expect(jsonRes.status).toBe(200);
+      expect(jsonRes.headers.get('content-type')).toContain('application/json');
+      const payload = (await jsonRes.json()) as {
+        component: string;
+        initialData: { items: number[] };
+      };
+      expect(payload.component).toBe('simple-page');
+      expect(payload.initialData.items).toEqual([1, 2, 3]);
+
+      const htmlRes = await app.request('/items', {
+        headers: { Accept: 'text/html;q=0.9, application/json;q=0.5' },
+      });
+      expect(htmlRes.status).toBe(200);
+      expect(htmlRes.headers.get('content-type')).toContain('text/html');
+    });
+  });
+
+  describe('error propagation & fallback strategy', () => {
+    it('propagates render and loader errors to Hono app.onError() by default', async () => {
+      const app = new Hono();
+      let caughtError: Error | null = null;
+
+      app.onError((err, c) => {
+        caughtError = err;
+        return c.text(`Handled by Hono: ${err.message}`, 500);
+      });
+
+      app.get(
+        '/broken',
+        aurelia({
+          component: SimplePage,
+          loader: async () => {
+            throw new Error('DB offline');
+          },
+        })
+      );
+
+      const res = await app.request('/broken');
+      expect(res.status).toBe(500);
+      expect(await res.text()).toBe('Handled by Hono: DB offline');
+      expect(caughtError).not.toBeNull();
+    });
+
+    it('delegates errors to custom onError hook when configured', async () => {
+      const app = new Hono();
+      app.get(
+        '/custom-err',
+        aurelia({
+          component: null,
+          onError: (err, c) =>
+            c.json(
+              { custom: true, reason: err instanceof Error ? err.message : String(err) },
+              503
+            ),
+        })
+      );
+
+      const res = await app.request('/custom-err');
+      expect(res.status).toBe(503);
+      const body = (await res.json()) as { custom: boolean; reason: string };
+      expect(body.custom).toBe(true);
+      expect(body.reason).toContain('component is required');
+    });
+
+    it('returns empty SPA document shell when fallback: "spa" and render fails', async () => {
+      const app = new Hono();
+      app.get(
+        '/spa-fallback',
+        aurelia({
+          component: {
+            get template() {
+              throw new Error('SSR crash');
+            },
+          },
+          title: 'SPA Shell',
+          fallback: 'spa',
+          document: { jsBundle: '/client.js' },
+        })
+      );
+
+      const res = await app.request('/spa-fallback');
+      expect(res.status).toBe(200);
+      const html = await res.text();
+      expect(html).toContain('<title>SPA Shell</title>');
+      expect(html).toContain('<app-root></app-root>');
+      expect(html).toContain('src="/client.js"');
+    });
+  });
+
+  describe('aureliaAction() explicit mutation handler', () => {
+    it('dispatches co-located static actions via _action query and X-Action header', async () => {
+      let likes = 10;
+
+      class PostPage {
+        static actions = {
+          like: async () => {
+            likes += 1;
+            return { liked: true, likes };
+          },
+          archive: async (c: { text: (body: string, status: 202) => Response }) =>
+            c.text('Archived', 202),
+        };
+      }
+
+      const app = new Hono();
+      app.post('/posts/:id', aureliaAction(PostPage));
+
+      const likeRes = await app.request('/posts/1?_action=like', { method: 'POST' });
+      expect(likeRes.status).toBe(200);
+      expect(await likeRes.json()).toEqual({ liked: true, likes: 11 });
+
+      const archiveRes = await app.request('/posts/1', {
+        method: 'POST',
+        headers: { 'X-Action': 'archive' },
+      });
+      expect(archiveRes.status).toBe(202);
+      expect(await archiveRes.text()).toBe('Archived');
+
+      const missingRes = await app.request('/posts/1?_action=unknown', { method: 'POST' });
+      expect(missingRes.status).toBe(404);
+    });
+
+    it('supports standalone action functions, maps, custom resolveAction, and 405 on empty target', async () => {
+      const app = new Hono();
+
+      app.post(
+        '/single',
+        aureliaAction(async () => ({ created: true }))
+      );
+
+      app.post(
+        '/custom-resolve',
+        aureliaAction(
+          {
+            ping: async () => ({ pong: true }),
+          },
+          {
+            resolveAction: (c) => c.req.header('X-Op'),
+          }
+        )
+      );
+
+      app.post('/readonly', aureliaAction(SimplePage));
+
+      const singleRes = await app.request('/single', { method: 'POST' });
+      expect(singleRes.status).toBe(200);
+      expect(await singleRes.json()).toEqual({ created: true });
+
+      const customRes = await app.request('/custom-resolve', {
+        method: 'POST',
+        headers: { 'X-Op': 'ping' },
+      });
+      expect(customRes.status).toBe(200);
+      expect(await customRes.json()).toEqual({ pong: true });
+
+      const readonlyRes = await app.request('/readonly', { method: 'POST' });
+      expect(readonlyRes.status).toBe(405);
     });
   });
 });

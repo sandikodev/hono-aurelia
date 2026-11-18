@@ -1,603 +1,287 @@
 /**
  * @hono/aurelia Route Adapter
- * 
- * High-level Hono middleware and route handler factory for Aurelia SSR.
- * Handles content negotiation, data loading, auth guards, and fallbacks.
- * 
- * @example
- * ```typescript
- * import { aurelia } from '@hono/aurelia';
- * import { DashboardPage } from './pages';
- * 
- * app.get('/dashboard', 
- *   aurelia({
- *     component: DashboardPage,
- *     title: 'Dashboard',
- *     requiresAuth: true,
- *     loaders: {
- *       overview: async (c) => {
- *         const res = await fetch(`${API_URL}/overview`);
- *         return res.json();
- *       }
- *     }
- *   })
- * );
- * ```
+ *
+ * Ultra-thin, Web-Standards-compliant Hono adapter for Aurelia 2 SSR.
+ * Zero Node filesystem dependencies, zero module-level global mutable state,
+ * and zero parallel auth/static middleware re-implementations.
  */
 
-import type { Context } from 'hono';
-import { resolve as pathResolve, normalize as pathNormalize } from 'node:path';
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import type { Context, Env, MiddlewareHandler } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { CustomElement } from 'aurelia';
 import {
   renderAurelia,
   serializeState,
   createHtmlDocument,
-  createErrorHtml,
-  createFallbackHtml,
   type RenderContext,
 } from '@aureliajs/ssr';
 import type {
-  AureliaRouteConfig,
+  AureliaActionHandler,
+  AureliaActionOptions,
+  AureliaComponentWithMetadata,
   AureliaDefaultsOptions,
-  ServeAssetsOptions,
+  AureliaLoader,
+  AureliaRouteConfig,
 } from './types.js';
 
-let globalAureliaDefaults: AureliaDefaultsOptions = {};
+const DEFAULTS_KEY = '__aurelia_defaults';
 
 /**
- * Configure global defaults for all aurelia() route handlers in the application.
+ * Hono middleware that provides router-scoped defaults (document options, streaming,
+ * opt-in dataEndpoint, error handler, registrations) to downstream `aurelia()` handlers.
  */
-export function setAureliaDefaults(defaults: AureliaDefaultsOptions): void {
-  globalAureliaDefaults = { ...globalAureliaDefaults, ...defaults };
-}
-
-/**
- * Middleware that provides router-scoped defaults (e.g. document bundle paths, streaming)
- * to all child aurelia() route handlers.
- *
- * @example
- * ```typescript
- * app.use('*', aureliaDefaults({
- *   document: { cssBundle: '/public/style.css', jsBundle: '/public/client.js' },
- *   streaming: true,
- * }));
- * ```
- */
-export function aureliaDefaults(defaults: AureliaDefaultsOptions) {
-  return async (c: Context, next: () => Promise<void>) => {
-    c.set('__aurelia_defaults', defaults);
+export function aureliaDefaults<E extends Env = Env>(
+  defaults: AureliaDefaultsOptions<E>
+): MiddlewareHandler<E> {
+  return async (c, next) => {
+    const existing = (c.get as (k: string) => AureliaDefaultsOptions<E> | undefined)(DEFAULTS_KEY);
+    const merged: AureliaDefaultsOptions<E> = {
+      ...existing,
+      ...defaults,
+      document: {
+        ...existing?.document,
+        ...defaults.document,
+      },
+    };
+    (c.set as (k: string, v: unknown) => void)(DEFAULTS_KEY, merged);
     await next();
   };
 }
 
-const MIME_MAP: Record<string, string> = {
-  '.css': 'text/css; charset=utf-8',
-  '.js': 'application/javascript; charset=utf-8',
-  '.mjs': 'application/javascript; charset=utf-8',
-  '.json': 'application/json; charset=utf-8',
-  '.svg': 'image/svg+xml',
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.gif': 'image/gif',
-  '.webp': 'image/webp',
-  '.ico': 'image/x-icon',
-  '.woff': 'font/woff',
-  '.woff2': 'font/woff2',
-  '.ttf': 'font/ttf',
-};
-
-/**
- * Ergonomic static asset middleware for Aurelia client bundles and assets.
- * Eliminates 20+ lines of readFileSync and MIME detection boilerplate.
- *
- * @example
- * ```typescript
- * app.use('/public/*', serveAureliaAssets({ root: './public' }));
- * ```
- */
-export function serveAureliaAssets(options: ServeAssetsOptions) {
-  const rootDir = pathResolve(options.root);
-  const prefix = options.prefix ?? '/public';
-  const maxAge = options.maxAge ?? 86400;
-
-  return async (c: Context, next: () => Promise<void>) => {
-    const urlPath = c.req.path;
-    if (!urlPath.startsWith(prefix)) {
-      return next();
-    }
-
-    const relPath = urlPath.slice(prefix.length).replace(/^\/+/, '');
-    const safePath = pathNormalize(pathResolve(rootDir, relPath));
-
-    // Prevent directory traversal attacks
-    if (!safePath.startsWith(rootDir)) {
-      return c.text('Forbidden', 403);
-    }
-
-    // Zero-copy kernel streaming via Bun.file when running on Bun
-    if (typeof (globalThis as unknown as { Bun?: { file: (p: string) => { exists: () => Promise<boolean> } } }).Bun !== 'undefined') {
-      const bunFile = (globalThis as unknown as { Bun: { file: (p: string) => { exists: () => Promise<boolean> } } }).Bun.file(safePath);
-      if (await bunFile.exists()) {
-        const dotIdx = safePath.lastIndexOf('.');
-        const ext = dotIdx !== -1 ? safePath.slice(dotIdx).toLowerCase() : '';
-        const contentType = MIME_MAP[ext] ?? 'application/octet-stream';
-        return new Response(bunFile as unknown as BodyInit, {
-          headers: {
-            'Content-Type': contentType,
-            'Cache-Control': `public, max-age=${maxAge}`,
-          },
-        });
-      }
-      return next();
-    }
-
-    if (!existsSync(safePath)) {
-      return next();
-    }
-
-    try {
-      const stat = statSync(safePath);
-      if (!stat.isFile()) {
-        return next();
-      }
-
-      const dotIdx = safePath.lastIndexOf('.');
-      const ext = dotIdx !== -1 ? safePath.slice(dotIdx).toLowerCase() : '';
-      const contentType = MIME_MAP[ext] ?? 'application/octet-stream';
-      const content = readFileSync(safePath);
-
-      return c.body(content, 200, {
-        'Content-Type': contentType,
-        'Cache-Control': `public, max-age=${maxAge}`,
-        'Content-Length': stat.size.toString(),
-      });
-    } catch {
-      return next();
-    }
-  };
-}
-
-/**
- * Content negotiation result
- */
-interface ContentNegotiation {
-  isHtml: boolean;
-  isJson: boolean;
-  preferredType: 'html' | 'json';
-}
-
-/**
- * Analyze Accept header to determine response format
- * 
- * @param acceptHeader - HTTP Accept header value
- * @returns Content negotiation preference
- * 
- * @internal
- */
-function negotiateContent(acceptHeader?: string): ContentNegotiation {
-  if (!acceptHeader) {
-    return { isHtml: true, isJson: false, preferredType: 'html' };
-  }
-
+function prefersJson(acceptHeader?: string): boolean {
+  if (!acceptHeader) return false;
   const hasJson = acceptHeader.includes('application/json');
+  if (!hasJson) return false;
   const hasHtml = acceptHeader.includes('text/html');
-  const hasWildcard = acceptHeader.includes('*/*');
+  if (!hasHtml) return true;
 
-  // Prioritize based on q-values and specificity
-  const jsonQValue = extractQValue(acceptHeader, 'application/json');
-  const htmlQValue = extractQValue(acceptHeader, 'text/html');
-  const wildcardQValue = extractQValue(acceptHeader, '*/*');
-
-  const jsonPriority = hasJson ? jsonQValue : (hasWildcard ? wildcardQValue : 0);
-  const htmlPriority = hasHtml ? htmlQValue : (hasWildcard ? wildcardQValue : 0.1);
-
-  const preferredType = jsonPriority > htmlPriority ? 'json' : 'html';
-
-  return {
-    isHtml: hasHtml || hasWildcard,
-    isJson: hasJson || hasWildcard,
-    preferredType,
-  };
+  const jsonQ = extractQValue(acceptHeader, 'application/json');
+  const htmlQ = extractQValue(acceptHeader, 'text/html');
+  return jsonQ > htmlQ;
 }
 
-/**
- * Extract q-value (quality factor) from Accept header
- * 
- * @internal
- */
 function extractQValue(acceptHeader: string, mimeType: string): number {
-  // Escape special regex characters in MIME type
-  const escapedMimeType = mimeType.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const regex = new RegExp(`${escapedMimeType}(?:;\\s*q=([0-9.]+))?`, 'i');
-  const match = acceptHeader.match(regex);
-  
+  const escaped = mimeType.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = acceptHeader.match(new RegExp(`${escaped}(?:;\\s*q=([0-9.]+))?`, 'i'));
   if (!match) return 0;
-  if (!match[1]) return 1; // Default q-value is 1
-  
-  const qValue = parseFloat(match[1]);
-  return isNaN(qValue) ? 0 : Math.min(Math.max(qValue, 0), 1);
+  if (!match[1]) return 1;
+  const q = parseFloat(match[1]);
+  return Number.isNaN(q) ? 0 : Math.min(Math.max(q, 0), 1);
 }
 
-/**
- * Extract render context from Hono context
- * 
- * Returns all request-scoped context variables from c.var without imposing
- * rigid schema constraints.
- * 
- * @internal
- */
-function extractRenderContext(c: Context): RenderContext {
-  return (c.var as RenderContext) || {};
+function extractDefaultContext<E extends Env>(c: Context<E>): RenderContext {
+  const raw = (c.var as Record<string, unknown> | undefined) ?? {};
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (key === DEFAULTS_KEY) continue;
+    result[key] = value;
+  }
+  return result;
 }
 
-/**
- * Execute data loaders in parallel
- * 
- * @internal
- */
-async function executeLoaders(
-  loaders: Record<string, (c: Context) => Promise<unknown | Response>> | undefined,
-  c: Context
-): Promise<{ data: Record<string, unknown>; response?: Response }> {
-  if (!loaders || Object.keys(loaders).length === 0) {
-    return { data: {} };
+function resolveComponentName(component: unknown): string {
+  if (!component) return 'Page';
+  try {
+    if (typeof component === 'function' && CustomElement.isType(component)) {
+      return CustomElement.getDefinition(component).name;
+    }
+    if (
+      typeof component === 'object' &&
+      component.constructor &&
+      CustomElement.isType(component.constructor)
+    ) {
+      return CustomElement.getDefinition(component.constructor).name;
+    }
+  } catch {
+    // Fallback to identifier lookup
   }
 
-  const results = await Promise.allSettled(
-    Object.entries(loaders).map(async ([key, loader]) => {
-      try {
-        const data = await loader(c);
-        return { key, data };
-      } catch (error) {
-        console.error(`Loader failed for key "${key}":`, error);
-        throw error;
-      }
-    })
+  const record = component as { name?: string };
+  if (typeof record.name === 'string' && record.name) {
+    return record.name;
+  }
+  if (typeof component === 'function' && component.name) {
+    return component.name;
+  }
+  return 'Page';
+}
+
+async function runNamedLoaders<E extends Env>(
+  loaders: Record<string, AureliaLoader<E>>,
+  c: Context<E>
+): Promise<{ data: Record<string, unknown>; response?: Response }> {
+  const entries = Object.entries(loaders);
+  if (entries.length === 0) return { data: {} };
+
+  const settled = await Promise.all(
+    entries.map(async ([key, loader]) => ({
+      key,
+      value: await loader(c),
+    }))
   );
 
   const data: Record<string, unknown> = {};
-  
-  for (const result of results) {
-    if (result.status === 'fulfilled') {
-      if (result.value.data instanceof Response) {
-        return { data: {}, response: result.value.data };
-      }
-      data[result.value.key] = result.value.data;
-    } else {
-      // Log but don't fail — loaders are optional data enrichment
-      console.warn('Loader error:', result.reason);
+  for (const item of settled) {
+    if (item.value instanceof Response) {
+      return { data: {}, response: item.value };
     }
+    data[item.key] = item.value;
   }
 
   return { data };
 }
 
 /**
- * Aurelia route handler factory
- * 
- * Creates a Hono middleware function that:
- * 1. Checks authentication (if requiresAuth)
- * 2. Executes co-located or configured data loaders
- * 3. Renders Aurelia component on server
- * 4. Negotiates response format (HTML vs JSON)
- * 5. Returns HTML document or JSON payload
- * 
- * Supports both full configuration object and ergonomic shorthand:
- * ```typescript
- * // Shorthand with co-located loaders and optional title
- * app.get('/posts/:slug', aurelia(PostDetailPage, 'Post Detail'));
- * 
- * // Full configuration object
- * app.get('/dashboard', aurelia({
- *   component: DashboardPage,
- *   title: 'Dashboard',
- *   requiresAuth: true,
- *   loaders: {
- *     stats: async (c) => fetch('/api/stats').then(r => r.json())
- *   }
- * }));
+ * Aurelia 2 SSR route handler factory for Hono.
+ *
+ * Supports both ergonomic shorthand and full typed configuration:
+ * ```ts
+ * app.get('/', aurelia(HomePage));
+ * app.get('/dashboard', requireAuth, aurelia(DashboardPage));
+ * app.get('/posts/:slug', aurelia({ component: PostPage, streaming: true }));
  * ```
  */
-export function aurelia(
-  config: AureliaRouteConfig
-): (c: Context) => Promise<Response>;
-export function aurelia(
+export function aurelia<
+  E extends Env = Env,
+  TData extends Record<string, unknown> = Record<string, unknown>,
+>(config: AureliaRouteConfig<E, TData>): (c: Context<E>) => Promise<Response>;
+export function aurelia<
+  E extends Env = Env,
+  TData extends Record<string, unknown> = Record<string, unknown>,
+>(
   component: unknown,
-  title?: string | ((data: Record<string, unknown>, c: Context) => string)
-): (c: Context) => Promise<Response>;
-export function aurelia(
-  configOrComponent: AureliaRouteConfig | unknown,
-  maybeTitle?: string | ((data: Record<string, unknown>, c: Context) => string)
-): (c: Context) => Promise<Response> {
-  // Normalize config
-  let config: AureliaRouteConfig;
+  title?: string | ((data: TData, c: Context<E>) => string)
+): (c: Context<E>) => Promise<Response>;
+export function aurelia<
+  E extends Env = Env,
+  TData extends Record<string, unknown> = Record<string, unknown>,
+>(
+  configOrComponent: AureliaRouteConfig<E, TData> | unknown,
+  maybeTitle?: string | ((data: TData, c: Context<E>) => string)
+): (c: Context<E>) => Promise<Response> {
   const isPlainConfig =
     Boolean(configOrComponent) &&
     typeof configOrComponent === 'object' &&
     'component' in (configOrComponent as Record<string, unknown>);
 
-  if (isPlainConfig) {
-    config = { ...(configOrComponent as AureliaRouteConfig) };
-  } else {
-    config = {
-      component: configOrComponent,
-      title: maybeTitle,
+  const config: AureliaRouteConfig<E, TData> = isPlainConfig
+    ? { ...(configOrComponent as AureliaRouteConfig<E, TData>) }
+    : { component: configOrComponent, title: maybeTitle };
+
+  const comp = config.component as AureliaComponentWithMetadata<E, TData> | null | undefined;
+
+  return async (c: Context<E>): Promise<Response> => {
+    const scopedDefaults = (c.get as (k: string) => AureliaDefaultsOptions<E> | undefined)(
+      DEFAULTS_KEY
+    );
+
+    const effectiveStreaming = config.streaming ?? scopedDefaults?.streaming ?? false;
+    const effectiveDataEndpoint = config.dataEndpoint ?? scopedDefaults?.dataEndpoint ?? false;
+    const effectiveFallback =
+      config.fallback ?? comp?.fallback ?? scopedDefaults?.fallback ?? 'throw';
+    const effectiveDocument = {
+      ...scopedDefaults?.document,
+      ...config.document,
     };
-  }
+    const effectiveSerialize = config.serialize ?? scopedDefaults?.serialize;
+    const effectiveOnError = config.onError ?? scopedDefaults?.onError;
+    const effectiveTimeout = config.timeout ?? scopedDefaults?.timeout;
+    const effectiveRegistrations = [
+      ...(scopedDefaults?.registrations ?? []),
+      ...(config.registrations ?? []),
+    ];
 
-  const comp = config.component as (Record<string, unknown> & { name?: string }) | null | undefined;
-
-  // Infer title from static component property if omitted
-  if (!config.title && comp) {
-    if (typeof comp.title === 'string' || typeof comp.title === 'function') {
-      config.title = comp.title as any;
-    } else if (typeof comp.name === 'string' && comp.name) {
-      config.title = comp.name;
-    } else {
-      config.title = 'Aurelia App';
-    }
-  } else if (!config.title) {
-    config.title = 'Aurelia App';
-  }
-
-  // Infer requiresAuth from static component property if omitted
-  if (config.requiresAuth === undefined && comp && typeof comp.requiresAuth === 'boolean') {
-    config.requiresAuth = comp.requiresAuth;
-  }
-
-  // Infer authGuard and onUnauthorized from component if omitted
-  if (config.authGuard === undefined && comp && typeof comp.authGuard === 'function') {
-    config.authGuard = comp.authGuard as AureliaRouteConfig['authGuard'];
-  }
-  if (config.onUnauthorized === undefined && comp && typeof comp.onUnauthorized === 'function') {
-    config.onUnauthorized = comp.onUnauthorized as AureliaRouteConfig['onUnauthorized'];
-  }
-
-  // Infer fallback from static component property if omitted
-  if (config.fallback === undefined && comp && (comp.fallback === 'spa' || comp.fallback === 'error')) {
-    config.fallback = comp.fallback as 'spa' | 'error';
-  }
-
-  return async (c: Context) => {
     try {
-      // === PHASE 0: DEFAULTS RESOLUTION ===
-      const contextDefaults = c.get('__aurelia_defaults') as AureliaDefaultsOptions | undefined;
-      const effectiveStreaming =
-        config.streaming ?? contextDefaults?.streaming ?? globalAureliaDefaults.streaming ?? false;
-      const effectiveDocument = {
-        ...globalAureliaDefaults.document,
-        ...contextDefaults?.document,
-        ...config.document,
+      // 1. Resolve render context
+      const contextResolver = config.context ?? scopedDefaults?.context;
+      const context: RenderContext = contextResolver
+        ? await contextResolver(c)
+        : extractDefaultContext(c);
+
+      // 2. Execute co-located and route-configured loaders
+      const initialData: Record<string, unknown> = {};
+
+      const executeSingleLoader = async (
+        loaderFn: AureliaLoader<E, unknown>
+      ): Promise<Response | null> => {
+        const result = await loaderFn(c);
+        if (result instanceof Response) return result;
+        if (result && typeof result === 'object') {
+          Object.assign(initialData, result);
+        }
+        return null;
       };
-      const effectiveFallback =
-        config.fallback ?? contextDefaults?.fallback ?? globalAureliaDefaults.fallback ?? 'error';
 
-      // === PHASE 1: AUTH GUARD ===
-      const context = extractRenderContext(c);
-      const ctxRecord = context as Record<string, unknown>;
-
-      if (config.requiresAuth) {
-        let isAuthorized = false;
-        const customGuard =
-          config.authGuard ?? contextDefaults?.authGuard ?? globalAureliaDefaults.authGuard;
-        if (typeof customGuard === 'function') {
-          const guardResult = await customGuard(c);
-          if (guardResult instanceof Response) {
-            return guardResult;
-          }
-          isAuthorized = Boolean(guardResult);
-        } else {
-          isAuthorized = Boolean(
-            c.get('user') || c.get('auth') || c.get('session') || c.get('jwtPayload') || ctxRecord.user
-          );
+      const runLoadersPhase = async (): Promise<Response | null> => {
+        if (typeof comp?.loader === 'function') {
+          const shortCircuit = await executeSingleLoader(comp.loader);
+          if (shortCircuit) return shortCircuit;
         }
-
-        if (!isAuthorized) {
-          const customUnauthorized =
-            config.onUnauthorized ?? contextDefaults?.onUnauthorized ?? globalAureliaDefaults.onUnauthorized;
-          if (typeof customUnauthorized === 'function') {
-            return await customUnauthorized(c);
-          }
-          return c.json(
-            { error: 'Unauthorized', message: 'This page requires authentication' },
-            { status: 401 }
-          );
-        }
-      }
-
-      // === PHASE 1.5: CO-LOCATED ACTIONS & MUTATIONS (POST/PUT/PATCH/DELETE) ===
-      if (c.req.method !== 'GET' && c.req.method !== 'HEAD') {
-        let actionName = c.req.query('_action') || c.req.query('action') || c.req.header('X-Action');
-
-        const contentType = c.req.header('Content-Type') || '';
-        if (!actionName) {
-          if (contentType.includes('application/json')) {
-            const body = await c.req.json().catch(() => null);
-            if (body && typeof body._action === 'string') {
-              actionName = body._action;
-            } else if (body && typeof body.action === 'string') {
-              actionName = body.action;
-            }
-          } else if (
-            contentType.includes('application/x-www-form-urlencoded') ||
-            contentType.includes('multipart/form-data')
-          ) {
-            const formData = (await c.req.parseBody().catch(() => ({}))) as Record<string, unknown>;
-            if (typeof formData._action === 'string') {
-              actionName = formData._action;
-            } else if (typeof formData.action === 'string') {
-              actionName = formData.action;
-            }
-          }
-        }
-
-        const effectiveActionName = actionName || 'default';
-        const actionsMap = (config.actions || comp?.actions) as
-          | Record<string, (c: Context) => Promise<unknown>>
-          | undefined;
-        let actionHandler = actionsMap?.[effectiveActionName];
-
-        if (!actionHandler && effectiveActionName === 'default') {
-          if (typeof config.action === 'function') {
-            actionHandler = config.action;
-          } else if (typeof comp?.action === 'function') {
-            actionHandler = comp.action as (c: Context) => Promise<unknown>;
-          }
-        }
-
-        if (!actionHandler) {
-          if (actionsMap && Object.keys(actionsMap).length > 0) {
-            return c.json({ error: `Action "${effectiveActionName}" not found` }, 404);
-          }
-          return c.text('Method Not Allowed', { status: 405 });
-        }
-
-        const actionResult = await actionHandler(c);
-
-        if (actionResult instanceof Response) {
-          return actionResult;
-        }
-
-        return c.json(actionResult !== undefined ? actionResult : { success: true });
-      }
-
-      // === PHASE 2: CONTENT NEGOTIATION ===
-      const acceptHeader = c.req.header('Accept');
-      const { preferredType, isHtml, isJson } = negotiateContent(acceptHeader);
-
-      // === PHASE 3: DATA LOADING ===
-      let initialData: Record<string, unknown> = {};
-
-      // 1. Co-located static loaders on component class
-      if (comp) {
-        if (typeof comp.loader === 'function') {
-          try {
-            const result = await (comp.loader as (c: Context) => Promise<unknown>)(c);
-            if (result instanceof Response) {
-              return result;
-            }
-            if (result && typeof result === 'object') {
-              Object.assign(initialData, result);
-            }
-          } catch (error) {
-            console.error('Co-located loader failed:', error);
-            if (config.fallback === 'error') {
-              return c.html(
-                createErrorHtml(500, 'Failed to load page data', 'Please try refreshing the page'),
-                { status: 500 }
-              );
-            }
-          }
-        }
-        if (comp.loaders && typeof comp.loaders === 'object') {
-          try {
-            const res = await executeLoaders(comp.loaders as Record<string, (c: Context) => Promise<unknown | Response>>, c);
-            if (res.response) {
-              return res.response;
-            }
-            Object.assign(initialData, res.data);
-          } catch (error) {
-            console.error('Co-located loaders failed:', error);
-            if (config.fallback === 'error') {
-              return c.html(
-                createErrorHtml(500, 'Failed to load page data', 'Please try refreshing the page'),
-                { status: 500 }
-              );
-            }
-          }
-        }
-      }
-
-      // 2. Explicit config.loaders overrides/augments co-located loaders
-      if (config.loaders) {
-        try {
-          const res = await executeLoaders(config.loaders, c);
-          if (res.response) {
-            return res.response;
-          }
+        if (comp?.loaders && typeof comp.loaders === 'object') {
+          const res = await runNamedLoaders(comp.loaders, c);
+          if (res.response) return res.response;
           Object.assign(initialData, res.data);
-        } catch (error) {
-          // If loaders fail, decide based on fallback strategy
-          if (config.fallback === 'error') {
-            console.error('Data loading failed:', error);
-            return c.html(
-              createErrorHtml(
-                500,
-                'Failed to load page data',
-                'Please try refreshing the page'
-              ),
-              { status: 500 }
-            );
-          }
-          // Otherwise, continue with empty data (loaders are optional)
+        }
+        if (typeof config.loader === 'function') {
+          const shortCircuit = await executeSingleLoader(config.loader);
+          if (shortCircuit) return shortCircuit;
+        }
+        if (config.loaders) {
+          const res = await runNamedLoaders(config.loaders, c);
+          if (res.response) return res.response;
+          Object.assign(initialData, res.data);
+        }
+        return null;
+      };
+
+      try {
+        const loaderResponse = await runLoadersPhase();
+        if (loaderResponse) return loaderResponse;
+      } catch (loaderError) {
+        if (effectiveFallback !== 'spa') {
+          throw loaderError;
         }
       }
 
-      let componentName = 'Page';
-      if (comp) {
-        try {
-          if (CustomElement.isType(comp as any)) {
-            componentName = CustomElement.getDefinition(comp as any).name;
-          } else if (typeof comp.name === 'string' && comp.name) {
-            componentName = comp.name;
-          } else if (typeof config.component === 'function' && config.component.name) {
-            componentName = config.component.name;
-          }
-        } catch {
-          if (typeof comp.name === 'string' && comp.name) {
-            componentName = comp.name;
-          }
-        }
-      }
+      const componentName = resolveComponentName(config.component);
+      const typedData = initialData as TData;
 
-      // Dynamic title resolution
+      // 3. Resolve dynamic title and HTTP status
       let effectiveTitle = 'Aurelia App';
       const titleCandidate = config.title ?? comp?.title ?? comp?.name;
       if (typeof titleCandidate === 'function') {
-        try {
-          effectiveTitle = (titleCandidate as (d: Record<string, unknown>, c: Context) => string)(initialData, c) || 'Aurelia App';
-        } catch {
-          effectiveTitle = 'Aurelia App';
-        }
+        effectiveTitle = titleCandidate(typedData, c) || 'Aurelia App';
       } else if (typeof titleCandidate === 'string' && titleCandidate) {
         effectiveTitle = titleCandidate;
       }
 
-      // Dynamic HTTP status resolution
-      let effectiveStatus = 200;
+      let effectiveStatus: ContentfulStatusCode = 200;
       if (typeof config.status === 'function') {
-        effectiveStatus = config.status(initialData, c);
+        effectiveStatus = config.status(typedData, c);
       } else if (typeof config.status === 'number') {
         effectiveStatus = config.status;
       } else if (typeof comp?.status === 'function') {
-        effectiveStatus = (comp.status as (d: Record<string, unknown>, c: Context) => number)(initialData, c);
+        effectiveStatus = comp.status(typedData, c);
       } else if (typeof comp?.status === 'number') {
         effectiveStatus = comp.status;
-      } else if (c.res && c.res.status && c.res.status !== 200) {
-        effectiveStatus = c.res.status;
       }
 
-      // === PHASE 4: JSON RESPONSE ===
-      if (preferredType === 'json' && isJson) {
-        return c.json({
-          component: componentName,
-          title: effectiveTitle,
-          context,
-          initialData,
-          timestamp: Date.now(),
-        }, effectiveStatus as any);
+      // 4. Opt-in JSON data endpoint
+      if (effectiveDataEndpoint && prefersJson(c.req.header('Accept'))) {
+        return c.json(
+          {
+            component: componentName,
+            title: effectiveTitle,
+            context,
+            initialData,
+            timestamp: Date.now(),
+          },
+          effectiveStatus
+        );
       }
 
-      // === PHASE 5: HTML RESPONSE ===
-      if (!isHtml && !isJson) {
-        // Client doesn't accept HTML or JSON
-        return c.text('Not Acceptable', { status: 406 });
-      }
-
-      // Render component on server with full request parameters
-      let html: string;
+      // 5. Server-side render Aurelia 2 component
+      let html = '';
       try {
         html = await renderAurelia({
           component: config.component,
@@ -606,74 +290,133 @@ export function aurelia(
           url: c.req.url,
           params: c.req.param(),
           query: c.req.query(),
+          registrations: effectiveRegistrations.length > 0 ? effectiveRegistrations : undefined,
+          timeout: effectiveTimeout,
         });
-      } catch (error) {
-        console.error('Rendering failed:', error);
-        
+      } catch (renderError) {
         if (effectiveFallback === 'spa') {
-          // Return empty shell for client-side rendering
-          html = createFallbackHtml();
+          html = '';
         } else {
-          // Return error page
-          return c.html(
-            createErrorHtml(
-              500,
-              'Failed to render page',
-              'An unexpected error occurred'
-            ),
-            { status: 500 }
-          );
+          throw renderError;
         }
       }
 
-      // Serialize state for client hydration
+      // 6. Serialize hydration payload and emit HTML (buffered or streamed)
       const payload = await serializeState(
         context,
         initialData,
-        componentName
+        componentName,
+        effectiveSerialize
       );
 
-      // Streaming response mode for near-zero TTFB
       if (effectiveStreaming) {
-        const marker = '<!--__SSR_STREAM_SPLIT__-->';
-        const templateDoc = createHtmlDocument(marker, payload, {
+        const marker = '<!--__AURELIA_SSR_STREAM_SPLIT__-->';
+        const shell = createHtmlDocument(marker, payload, {
           title: effectiveTitle,
           ...effectiveDocument,
         });
-        const [preamble, postamble] = templateDoc.split(marker);
+        const [preamble = '', postamble = ''] = shell.split(marker);
         const encoder = new TextEncoder();
-        const stream = new ReadableStream({
+
+        const stream = new ReadableStream<Uint8Array>({
           start(controller) {
-            controller.enqueue(encoder.encode(preamble ?? ''));
+            controller.enqueue(encoder.encode(preamble));
             controller.enqueue(encoder.encode(html));
-            controller.enqueue(encoder.encode(postamble ?? ''));
+            controller.enqueue(encoder.encode(postamble));
             controller.close();
           },
         });
-        return c.body(stream, effectiveStatus as any, {
+
+        return c.body(stream, effectiveStatus, {
           'Content-Type': 'text/html; charset=utf-8',
           'Transfer-Encoding': 'chunked',
         });
       }
 
-      // Standard buffered HTML document
       const document = createHtmlDocument(html, payload, {
         title: effectiveTitle,
         ...effectiveDocument,
       });
 
-      return c.html(document, effectiveStatus as any);
-
+      return c.html(document, effectiveStatus);
     } catch (error) {
-      console.error('Route handler error:', error);
-      return c.html(
-        createErrorHtml(
-          500,
-          'Internal Server Error',
-          'Something went wrong processing your request'
-        ),
-        { status: 500 }
-      );
+      if (typeof effectiveOnError === 'function') {
+        return await effectiveOnError(error, c);
+      }
+      throw error;
     }
+  };
+}
+
+/**
+ * Explicit Hono route handler for Aurelia co-located or standalone server actions.
+ *
+ * Mount explicitly on mutation HTTP verbs (`app.post`, `app.put`, `app.delete`):
+ * ```ts
+ * app.get('/posts/:slug', aurelia(PostDetailPage));
+ * app.post('/posts/:slug', aureliaAction(PostDetailPage));
+ * ```
+ */
+export function aureliaAction<E extends Env = Env>(
+  target:
+    | AureliaComponentWithMetadata<E>
+    | AureliaActionHandler<E>
+    | Record<string, AureliaActionHandler<E>>
+    | unknown,
+  options?: AureliaActionOptions<E>
+): (c: Context<E>) => Promise<Response> {
+  return async (c: Context<E>): Promise<Response> => {
+    const resolvedName = options?.resolveAction
+      ? await options.resolveAction(c)
+      : c.req.query('_action') || c.req.header('X-Action');
+    const actionName = resolvedName || 'default';
+
+    let handler: AureliaActionHandler<E> | undefined;
+    let hasNamedActions = false;
+
+    const isComponentClass =
+      typeof target === 'function' &&
+      (CustomElement.isType(target) || /^\s*class\b/.test(Function.prototype.toString.call(target)));
+
+    if (
+      typeof target === 'function' &&
+      !isComponentClass &&
+      !('actions' in target) &&
+      !('action' in target)
+    ) {
+      if (actionName === 'default') {
+        handler = target as AureliaActionHandler<E>;
+      }
+    } else if (target && (typeof target === 'object' || typeof target === 'function')) {
+      const comp = target as AureliaComponentWithMetadata<E>;
+      if (comp.actions && typeof comp.actions === 'object') {
+        hasNamedActions = Object.keys(comp.actions).length > 0;
+        handler = comp.actions[actionName];
+      } else if (!isComponentClass && !('action' in comp)) {
+        const map = target as Record<string, AureliaActionHandler<E>>;
+        hasNamedActions = Object.keys(map).length > 0;
+        if (typeof map[actionName] === 'function') {
+          handler = map[actionName];
+        }
+      }
+
+      if (!handler && actionName === 'default' && typeof comp.action === 'function') {
+        handler = comp.action;
+      }
+    }
+
+    if (!handler) {
+      if (hasNamedActions) {
+        return c.json({ error: `Action "${actionName}" not found` }, 404);
+      }
+      return c.text('Method Not Allowed', 405);
+    }
+
+    const result = await handler(c);
+    if (result instanceof Response) {
+      return result;
+    }
+
+    return c.json(result !== undefined ? result : { success: true });
   };
 }
