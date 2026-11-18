@@ -17,6 +17,8 @@ export interface AureliaRouteConfig {
   title?: string | ((data: Record<string, unknown>, c: Context) => string);
   status?: number | ((data: Record<string, unknown>, c: Context) => number);
   requiresAuth?: boolean;
+  authGuard?: (c: Context) => boolean | Promise<boolean> | Response | Promise<Response>;
+  onUnauthorized?: (c: Context) => Response | Promise<Response>;
   loaders?: {
     [key: string]: (c: Context) => Promise<unknown | Response>;
   };
@@ -37,6 +39,8 @@ export interface AureliaComponentWithMetadata {
   title?: string | ((data: Record<string, unknown>, c: Context) => string);
   status?: number | ((data: Record<string, unknown>, c: Context) => number);
   requiresAuth?: boolean;
+  authGuard?: (c: Context) => boolean | Promise<boolean> | Response | Promise<Response>;
+  onUnauthorized?: (c: Context) => Response | Promise<Response>;
   loader?: (c: Context) => Promise<Record<string, unknown> | Response | unknown>;
   loaders?: Record<string, (c: Context) => Promise<unknown | Response>>;
   action?: (c: Context) => Promise<unknown | Response>;

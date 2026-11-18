@@ -753,5 +753,50 @@ describe('integration scenarios', () => {
       const html = await res.text();
       expect(html).toContain('Article Not Found');
     });
+
+    it('supports custom authGuard and onUnauthorized hooks in route config', async () => {
+      const app = new Hono();
+
+      app.get(
+        '/custom-guarded',
+        aurelia({
+          component: MockComponent,
+          requiresAuth: true,
+          authGuard: (c) => c.req.header('X-Custom-Auth') === 'secret-token',
+          onUnauthorized: () => new Response('Custom Access Denied', { status: 403 }),
+        })
+      );
+
+      // Request without header -> blocked with custom 403 Response
+      const blockedRes = await app.request('/custom-guarded');
+      expect(blockedRes.status).toBe(403);
+      expect(await blockedRes.text()).toBe('Custom Access Denied');
+
+      // Request with header -> allowed
+      const allowedRes = await app.request('/custom-guarded', {
+        headers: {
+          'X-Custom-Auth': 'secret-token',
+          Accept: 'text/html',
+        },
+      });
+      expect(allowedRes.status).toBe(200);
+    });
+
+    it('supports custom authGuard directly returning a redirect Response', async () => {
+      const app = new Hono();
+
+      app.get(
+        '/guard-redirect',
+        aurelia({
+          component: MockComponent,
+          requiresAuth: true,
+          authGuard: (c) => c.redirect('/auth/login', 302),
+        })
+      );
+
+      const res = await app.request('/guard-redirect');
+      expect(res.status).toBe(302);
+      expect(res.headers.get('location')).toBe('/auth/login');
+    });
   });
 });

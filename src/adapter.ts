@@ -116,6 +116,23 @@ export function serveAureliaAssets(options: ServeAssetsOptions) {
       return c.text('Forbidden', 403);
     }
 
+    // Zero-copy kernel streaming via Bun.file when running on Bun
+    if (typeof (globalThis as unknown as { Bun?: { file: (p: string) => { exists: () => Promise<boolean> } } }).Bun !== 'undefined') {
+      const bunFile = (globalThis as unknown as { Bun: { file: (p: string) => { exists: () => Promise<boolean> } } }).Bun.file(safePath);
+      if (await bunFile.exists()) {
+        const dotIdx = safePath.lastIndexOf('.');
+        const ext = dotIdx !== -1 ? safePath.slice(dotIdx).toLowerCase() : '';
+        const contentType = MIME_MAP[ext] ?? 'application/octet-stream';
+        return new Response(bunFile as unknown as BodyInit, {
+          headers: {
+            'Content-Type': contentType,
+            'Cache-Control': `public, max-age=${maxAge}`,
+          },
+        });
+      }
+      return next();
+    }
+
     if (!existsSync(safePath)) {
       return next();
     }
@@ -330,6 +347,14 @@ export function aurelia(
     config.requiresAuth = comp.requiresAuth;
   }
 
+  // Infer authGuard and onUnauthorized from component if omitted
+  if (config.authGuard === undefined && comp && typeof comp.authGuard === 'function') {
+    config.authGuard = comp.authGuard as AureliaRouteConfig['authGuard'];
+  }
+  if (config.onUnauthorized === undefined && comp && typeof comp.onUnauthorized === 'function') {
+    config.onUnauthorized = comp.onUnauthorized as AureliaRouteConfig['onUnauthorized'];
+  }
+
   // Infer fallback from static component property if omitted
   if (config.fallback === undefined && comp && (comp.fallback === 'spa' || comp.fallback === 'error')) {
     config.fallback = comp.fallback as 'spa' | 'error';
@@ -356,11 +381,27 @@ export function aurelia(
         c.get('user') || c.get('auth') || c.get('session') || ctxRecord.user
       );
 
-      if (config.requiresAuth && !isAuthenticated) {
-        return c.json(
-          { error: 'Unauthorized', message: 'This page requires authentication' },
-          { status: 401 }
-        );
+      if (config.requiresAuth) {
+        let isAuthorized = false;
+        if (typeof config.authGuard === 'function') {
+          const guardResult = await config.authGuard(c);
+          if (guardResult instanceof Response) {
+            return guardResult;
+          }
+          isAuthorized = Boolean(guardResult);
+        } else {
+          isAuthorized = isAuthenticated;
+        }
+
+        if (!isAuthorized) {
+          if (typeof config.onUnauthorized === 'function') {
+            return await config.onUnauthorized(c);
+          }
+          return c.json(
+            { error: 'Unauthorized', message: 'This page requires authentication' },
+            { status: 401 }
+          );
+        }
       }
 
       // === PHASE 1.5: CO-LOCATED ACTIONS & MUTATIONS (POST/PUT/PATCH/DELETE) ===
