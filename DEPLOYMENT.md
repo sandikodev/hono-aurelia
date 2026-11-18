@@ -29,9 +29,9 @@ Deployments split into two categories:
 
 ```json
 {
-  "buildCommand": "pnpm build",
+  "buildCommand": "bun run build",
   "outputDirectory": "dist",
-  "devCommand": "pnpm dev",
+  "devCommand": "bun run dev",
   "regions": ["sfo1"]
 }
 ```
@@ -49,7 +49,7 @@ Deployments split into two categories:
 3. **Deploy:**
 
 ```bash
-pnpm i -g vercel
+bun add -g vercel
 vercel
 ```
 
@@ -59,9 +59,9 @@ vercel
 
 ```json
 {
-  "buildCommand": "pnpm install --frozen-lockfile && pnpm build",
+  "buildCommand": "bun install --frozen-lockfile && bun run build",
   "outputDirectory": "dist",
-  "devCommand": "pnpm dev",
+  "devCommand": "bun run dev",
   "regions": ["sfo1"],
   "env": {
     "NODE_ENV": "production",
@@ -181,11 +181,11 @@ wrangler deploy --env production
 # Build stage
 FROM node:22-alpine AS builder
 WORKDIR /app
-COPY package.json pnpm-lock.yaml ./
-RUN npm install -g pnpm && pnpm install --frozen-lockfile
+COPY package.json ./
+RUN bun install --frozen-lockfile
 
 COPY . .
-RUN pnpm build && pnpm prune --prod
+RUN bun run build && bun install --production
 
 # Runtime stage
 FROM node:22-alpine
@@ -284,7 +284,7 @@ services:
     github:
       repo: your-repo/aurelia-ssr
       branch: main
-    build_command: pnpm build
+    build_command: bun run build
     run_command: node dist/index.js
     http_port: 3000
     envs:
@@ -330,7 +330,7 @@ git push heroku main
 {
   "build": {
     "builder": "nixpacks",
-    "buildCommand": "pnpm install && pnpm build"
+    "buildCommand": "bun install && bun run build"
   },
   "deploy": {
     "restartPolicyType": "on_failure",

@@ -48,7 +48,7 @@
 ## 3. Installation
 
 ```bash
-pnpm add @hono/aurelia @aureliajs/ssr aurelia hono
+bun add @hono/aurelia @aureliajs/ssr aurelia hono
 ```
 
 ---
