@@ -5,7 +5,7 @@
  * data loading, auth guards, and error handling.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'bun:test';
 import { Hono } from 'hono';
 import {
   aurelia,
@@ -18,13 +18,6 @@ const MockComponent = {
   name: 'MockPage',
   template: '<div>Mock Content</div>',
   render: () => '<div>Mock Content</div>',
-};
-
-// Mock context
-const _mockContext = {
-  user: { id: '1', email: 'user@example.com', name: 'Test User' },
-  workspace: { id: 'ws-1', name: 'Test Workspace' },
-  role: 'admin',
 };
 
 describe('aurelia() route handler', () => {
@@ -44,9 +37,10 @@ describe('aurelia() route handler', () => {
         })
       );
 
-      // Set context manually since we're not testing middleware
-      const _c = app.request('/page', { headers: { 'Accept': 'text/html' } });
-      // Context would normally be set by auth middleware
+      const res = await app.request('/page', { headers: { 'Accept': 'text/html' } });
+      expect(res.status).toBe(200);
+      const html = await res.text();
+      expect(html).toContain('Mock Content');
     });
 
     it('handles missing component gracefully', async () => {
@@ -57,6 +51,9 @@ describe('aurelia() route handler', () => {
           title: 'Error Page',
         })
       );
+
+      const res = await app.request('/error', { headers: { 'Accept': 'text/html' } });
+      expect(res.status).toBe(500);
     });
 
     it('includes title in HTML document', async () => {
@@ -642,7 +639,8 @@ describe('integration scenarios', () => {
         static name = 'ActionPage';
         static title = 'Actions Test';
         static actions = {
-          like: async (_c: any) => {
+          like: async (c: any) => {
+            expect(c).toBeDefined();
             return { success: true, count: 42 };
           },
           comment: async (c: any) => {
