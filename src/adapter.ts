@@ -377,25 +377,28 @@ export function aurelia(
       // === PHASE 1: AUTH GUARD ===
       const context = extractRenderContext(c);
       const ctxRecord = context as Record<string, unknown>;
-      const isAuthenticated = Boolean(
-        c.get('user') || c.get('auth') || c.get('session') || ctxRecord.user
-      );
 
       if (config.requiresAuth) {
         let isAuthorized = false;
-        if (typeof config.authGuard === 'function') {
-          const guardResult = await config.authGuard(c);
+        const customGuard =
+          config.authGuard ?? contextDefaults?.authGuard ?? globalAureliaDefaults.authGuard;
+        if (typeof customGuard === 'function') {
+          const guardResult = await customGuard(c);
           if (guardResult instanceof Response) {
             return guardResult;
           }
           isAuthorized = Boolean(guardResult);
         } else {
-          isAuthorized = isAuthenticated;
+          isAuthorized = Boolean(
+            c.get('user') || c.get('auth') || c.get('session') || c.get('jwtPayload') || ctxRecord.user
+          );
         }
 
         if (!isAuthorized) {
-          if (typeof config.onUnauthorized === 'function') {
-            return await config.onUnauthorized(c);
+          const customUnauthorized =
+            config.onUnauthorized ?? contextDefaults?.onUnauthorized ?? globalAureliaDefaults.onUnauthorized;
+          if (typeof customUnauthorized === 'function') {
+            return await customUnauthorized(c);
           }
           return c.json(
             { error: 'Unauthorized', message: 'This page requires authentication' },
@@ -581,10 +584,7 @@ export function aurelia(
         return c.json({
           component: componentName,
           title: effectiveTitle,
-          context: {
-            ...context,
-            isAuthenticated,
-          },
+          context,
           initialData,
           timestamp: Date.now(),
         }, effectiveStatus as any);

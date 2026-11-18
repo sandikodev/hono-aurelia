@@ -57,6 +57,8 @@ export interface AureliaDefaultsOptions {
   document?: DocumentOptions;
   streaming?: boolean;
   fallback?: 'spa' | 'error';
+  authGuard?: (c: Context) => boolean | Promise<boolean> | Response | Promise<Response>;
+  onUnauthorized?: (c: Context) => Response | Promise<Response>;
 }
 
 /**
