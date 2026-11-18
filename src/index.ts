@@ -1,7 +1,7 @@
 /**
  * @hono/aurelia
  *
- * Thin, Web-Standards-compliant SSR & action adapter for Aurelia 2 on Hono.
+ * Pure, Web-Standards-compliant SSR & Server Actions adapter for Aurelia 2 on Hono.
  */
 
 export {
@@ -12,11 +12,15 @@ export {
 
 export type {
   AureliaActionHandler,
+  AureliaActionMap,
   AureliaActionOptions,
-  AureliaComponentWithMetadata,
+  AureliaActionSource,
+  AureliaComponent,
   AureliaDefaultsOptions,
   AureliaLoader,
+  AureliaRouteComponent,
   AureliaRouteConfig,
+  ComponentProps,
   DocumentOptions,
   SerializeOptions,
 } from './types.js';

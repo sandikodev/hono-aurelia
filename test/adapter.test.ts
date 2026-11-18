@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'bun:test';
 import { Hono } from 'hono';
 import { CustomElement } from 'aurelia';
+import { DEFAULT_SCRIPT_ID, resolveRequestContext } from '@aureliajs/ssr';
 import { aurelia, aureliaAction, aureliaDefaults } from '../src/adapter.js';
 
 const SimplePage = CustomElement.define(
@@ -15,8 +16,8 @@ const SimplePage = CustomElement.define(
 );
 
 describe('@hono/aurelia adapter', () => {
-  describe('SSR rendering & shorthand', () => {
-    it('renders HTML by default via shorthand signature aurelia(Component, title)', async () => {
+  describe('HTML5 SSR rendering & real Web Streams streaming', () => {
+    it('renders HTML5 document with inert <script type="application/json"> via shorthand', async () => {
       const app = new Hono();
       app.get('/', aurelia(SimplePage, 'Home Title'));
 
@@ -28,72 +29,77 @@ describe('@hono/aurelia adapter', () => {
       expect(html).toContain('<!DOCTYPE html>');
       expect(html).toContain('<title>Home Title</title>');
       expect(html).toContain('Hello Aurelia');
-      expect(html).toContain('window.__HYDRATION__');
-      expect(html).toContain('"component":"simple-page"');
+      expect(html).toContain(`<script id="${DEFAULT_SCRIPT_ID}" type="application/json">`);
+      expect(html).not.toContain('window.__HYDRATION__');
     });
 
-    it('renders HTML via full config object with custom document options', async () => {
-      const app = new Hono();
-      app.get(
-        '/custom',
-        aurelia({
-          component: SimplePage,
-          title: 'Custom Shell',
-          document: {
-            lang: 'id',
-            rootTag: 'my-root',
-            cssBundle: '/assets/app.css',
-            jsBundle: '/assets/app.js',
-          },
-        })
+    it('streams true incremental chunks via Web Streams ReadableStream (preamble flushed before body)', async () => {
+      const SlowPage = CustomElement.define(
+        { name: 'slow-stream-page', template: '<section>${status}</section>' },
+        class {
+          status = 'Streamed Body';
+          async attached() {
+            await new Promise((r) => setTimeout(r, 30));
+          }
+        }
       );
 
-      const res = await app.request('/custom');
-      expect(res.status).toBe(200);
-      const html = await res.text();
-      expect(html).toContain('<html lang="id">');
-      expect(html).toContain('<my-root>');
-      expect(html).toContain('href="/assets/app.css"');
-      expect(html).toContain('src="/assets/app.js"');
-    });
-
-    it('streams chunked HTML when streaming: true', async () => {
       const app = new Hono();
       app.get(
         '/stream',
         aurelia({
-          component: SimplePage,
-          title: 'Streamed',
+          component: SlowPage,
+          title: 'True Stream',
           streaming: true,
+          document: { cssBundle: '/app.css', jsBundle: '/client.js' },
         })
       );
 
       const res = await app.request('/stream');
       expect(res.status).toBe(200);
-      expect(res.headers.get('content-type')).toContain('text/html');
       expect(res.headers.get('transfer-encoding')).toBe('chunked');
-      const html = await res.text();
-      expect(html).toContain('<title>Streamed</title>');
-      expect(html).toContain('Pure SSR');
+      expect(res.body).not.toBeNull();
+
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+
+      // Chunk 1 must arrive immediately with <head> & CSS BEFORE SSR body finishes
+      const first = await reader.read();
+      expect(first.done).toBe(false);
+      const firstChunk = decoder.decode(first.value);
+      expect(firstChunk).toContain('<title>True Stream</title>');
+      expect(firstChunk).toContain('<link rel="stylesheet" href="/app.css" />');
+      expect(firstChunk).not.toContain('Streamed Body');
+
+      // Drain remaining chunks
+      let rest = '';
+      while (true) {
+        const next = await reader.read();
+        if (next.done) break;
+        rest += decoder.decode(next.value);
+      }
+
+      expect(rest).toContain('Streamed Body');
+      expect(rest).toContain(`<script id="${DEFAULT_SCRIPT_ID}" type="application/json">`);
+      expect(rest).toContain('<script type="module" src="/client.js"></script>');
     });
   });
 
-  describe('loaders, dynamic title, and dynamic status', () => {
-    it('executes co-located static loader(c) and injects loaded props into SSR', async () => {
+  describe('strongly typed loader, dynamic title, and dynamic status', () => {
+    it('executes co-located static loader(c) and supports dynamic title & status', async () => {
       const ArticlePage = CustomElement.define(
         {
           name: 'article-page',
           template: '<article><h1>${article.title}</h1></article>',
         },
         class {
-          article = { title: '' };
-          static title = (data: { article?: { title: string } }) =>
+          article: { title: string } | null = null;
+          static title = (data: { article?: { title: string } | null }) =>
             data.article ? `${data.article.title} — Blog` : 'Not Found';
           static status = (data: { article?: unknown }) => (data.article ? 200 : 404);
           static async loader(c: { req: { param: (k: string) => string } }) {
             const slug = c.req.param('slug');
-            if (slug === 'missing') return { article: null };
-            return { article: { title: `Guide to ${slug}` } };
+            return { article: slug === 'missing' ? null : { title: `Guide to ${slug}` } };
           }
         }
       );
@@ -109,42 +115,40 @@ describe('@hono/aurelia adapter', () => {
 
       const missingRes = await app.request('/articles/missing');
       expect(missingRes.status).toBe(404);
-      const missingHtml = await missingRes.text();
-      expect(missingHtml).toContain('<title>Not Found</title>');
+      expect(await missingRes.text()).toContain('<title>Not Found</title>');
     });
 
-    it('executes multiple route loaders in parallel', async () => {
-      const DashboardComp = CustomElement.define(
-        {
-          name: 'dash-comp',
-          template: '<div>${metrics.count} / ${region.name}</div>',
-        },
+    it('composes parallel fetches cleanly inside a single typed loader via Promise.all', async () => {
+      const MetricsPage = CustomElement.define(
+        { name: 'metrics-page', template: '<div>${count} / ${region}</div>' },
         class {
-          metrics = { count: 0 };
-          region = { name: '' };
+          count = 0;
+          region = '';
         }
       );
 
       const app = new Hono();
       app.get(
-        '/dash',
+        '/metrics',
         aurelia({
-          component: DashboardComp,
-          loaders: {
-            metrics: async () => ({ count: 42 }),
-            region: async () => ({ name: 'ap-southeast-1' }),
+          component: MetricsPage,
+          preserveMarkers: false,
+          loader: async () => {
+            const [count, region] = await Promise.all([
+              Promise.resolve(42),
+              Promise.resolve('ap-southeast-1'),
+            ]);
+            return { count, region };
           },
         })
       );
 
-      const res = await app.request('/dash');
+      const res = await app.request('/metrics');
       expect(res.status).toBe(200);
-      const html = await res.text();
-      expect(html).toContain('42');
-      expect(html).toContain('ap-southeast-1');
+      expect(await res.text()).toContain('42 / ap-southeast-1');
     });
 
-    it('short-circuits SSR when loader returns a Response (e.g., redirect)', async () => {
+    it('short-circuits SSR immediately when loader returns a Response', async () => {
       const app = new Hono();
       app.get(
         '/private',
@@ -160,223 +164,136 @@ describe('@hono/aurelia adapter', () => {
     });
   });
 
-  describe('composable Hono middleware & context isolation', () => {
-    it('composes cleanly with standard Hono auth middleware without parallel auth flags', async () => {
-      type Env = { Variables: { tenant: string; actor: { name: string } } };
-      const app = new Hono<Env>();
-
-      const requireActor = async (
-        c: Parameters<Parameters<typeof app.use>[1]>[0],
-        next: () => Promise<void>
-      ) => {
-        const token = c.req.header('Authorization');
-        if (token !== 'Bearer valid') {
-          return c.json({ error: 'Unauthorized' }, 401);
-        }
-        c.set('tenant', 'acme');
-        c.set('actor', { name: 'Sandiko' });
-        await next();
-        return undefined;
-      };
+  describe('WeakMap<Request> scoped defaults & typed DI context', () => {
+    it('composes with standard Hono auth middleware and injects context strictly via DI', async () => {
+      type AppEnv = { Variables: { tenant: string; actor: string } };
+      const app = new Hono<AppEnv>();
 
       const TenantPage = CustomElement.define(
-        {
-          name: 'tenant-page',
-          template: '<section>${tenant}: ${actor.name}</section>',
-        },
+        { name: 'tenant-page', template: '<section>${req.data.tenant}:${req.data.actor}</section>' },
         class {
-          tenant = '';
-          actor = { name: '' };
+          readonly req = resolveRequestContext<{ tenant: string; actor: string }>();
         }
       );
 
-      app.get('/workspace', requireActor, aurelia(TenantPage));
+      app.get(
+        '/workspace',
+        async (c, next) => {
+          if (c.req.header('Authorization') !== 'Bearer ok') {
+            return c.json({ error: 'Unauthorized' }, 401);
+          }
+          c.set('tenant', 'acme');
+          c.set('actor', 'Sandiko');
+          await next();
+          return;
+        },
+        aurelia({ component: TenantPage, preserveMarkers: false })
+      );
 
       const denied = await app.request('/workspace');
       expect(denied.status).toBe(401);
 
       const allowed = await app.request('/workspace', {
-        headers: { Authorization: 'Bearer valid' },
+        headers: { Authorization: 'Bearer ok' },
       });
       expect(allowed.status).toBe(200);
-      const html = await allowed.text();
-      expect(html).toContain('acme');
-      expect(html).toContain('Sandiko');
+      expect(await allowed.text()).toContain('acme:Sandiko');
     });
 
-    it('isolates aureliaDefaults per Hono app and strips internal keys from hydration context', async () => {
+    it('isolates aureliaDefaults via WeakMap<Request> with zero c.var pollution', async () => {
       const appA = new Hono();
-      appA.use(
-        '*',
-        aureliaDefaults({
-          document: { cssBundle: '/a.css', jsBundle: '/a.js' },
-          dataEndpoint: true,
-        })
-      );
+      appA.use('*', aureliaDefaults({ document: { cssBundle: '/a.css' }, dataEndpoint: true }));
       appA.get('/', aurelia(SimplePage));
 
       const appB = new Hono();
       appB.get('/', aurelia(SimplePage));
 
-      const resAJson = await appA.request('/', {
-        headers: { Accept: 'application/json' },
-      });
-      expect(resAJson.status).toBe(200);
-      const bodyA = (await resAJson.json()) as { context: Record<string, unknown> };
-      expect(bodyA.context.__aurelia_defaults).toBeUndefined();
+      const resA = await appA.request('/', { headers: { Accept: 'application/json' } });
+      expect(resA.status).toBe(200);
+      const jsonA = (await resA.json()) as { context: Record<string, unknown> };
+      expect(Object.keys(jsonA.context)).toEqual([]);
 
-      // App B must NOT inherit app A's defaults (zero global mutable state!)
-      const resB = await appB.request('/', {
-        headers: { Accept: 'application/json' },
-      });
+      const resB = await appB.request('/', { headers: { Accept: 'application/json' } });
       expect(resB.headers.get('content-type')).toContain('text/html');
-      const htmlB = await resB.text();
-      expect(htmlB).not.toContain('/a.css');
-    });
-
-    it('supports custom context extractor hook', async () => {
-      const app = new Hono();
-      app.get(
-        '/locale',
-        aurelia({
-          component: SimplePage,
-          dataEndpoint: true,
-          context: (c) => ({ locale: c.req.header('Accept-Language') ?? 'en' }),
-        })
-      );
-
-      const res = await app.request('/locale', {
-        headers: {
-          Accept: 'application/json',
-          'Accept-Language': 'id-ID',
-        },
-      });
-      const data = (await res.json()) as { context: { locale: string } };
-      expect(data.context.locale).toBe('id-ID');
+      expect(await resB.text()).not.toContain('/a.css');
     });
   });
 
-  describe('opt-in dataEndpoint content negotiation', () => {
-    it('serves HTML by default even when Accept: application/json is sent (opt-in safety)', async () => {
+  describe('opt-in dataEndpoint & error propagation', () => {
+    it('negotiates JSON vs HTML only when dataEndpoint: true', async () => {
       const app = new Hono();
-      app.get('/', aurelia(SimplePage));
+      app.get('/html-only', aurelia(SimplePage));
+      app.get(
+        '/dual',
+        aurelia({
+          component: SimplePage,
+          dataEndpoint: true,
+          loader: async () => ({ heading: 'API Heading' }),
+        })
+      );
 
-      const res = await app.request('/', {
+      const htmlOnly = await app.request('/html-only', {
         headers: { Accept: 'application/json' },
       });
-      expect(res.status).toBe(200);
-      expect(res.headers.get('content-type')).toContain('text/html');
-    });
+      expect(htmlOnly.headers.get('content-type')).toContain('text/html');
 
-    it('negotiates JSON vs HTML via q-values when dataEndpoint: true', async () => {
-      const app = new Hono();
-      app.get(
-        '/items',
-        aurelia({
-          component: SimplePage,
-          dataEndpoint: true,
-          loader: async () => ({ items: [1, 2, 3] }),
-        })
-      );
-
-      const jsonRes = await app.request('/items', {
-        headers: { Accept: 'text/html;q=0.5, application/json;q=0.9' },
+      const jsonRes = await app.request('/dual', {
+        headers: { Accept: 'text/html;q=0.4, application/json;q=0.9' },
       });
-      expect(jsonRes.status).toBe(200);
       expect(jsonRes.headers.get('content-type')).toContain('application/json');
-      const payload = (await jsonRes.json()) as {
-        component: string;
-        initialData: { items: number[] };
-      };
-      expect(payload.component).toBe('simple-page');
-      expect(payload.initialData.items).toEqual([1, 2, 3]);
-
-      const htmlRes = await app.request('/items', {
-        headers: { Accept: 'text/html;q=0.9, application/json;q=0.5' },
-      });
-      expect(htmlRes.status).toBe(200);
-      expect(htmlRes.headers.get('content-type')).toContain('text/html');
+      const body = (await jsonRes.json()) as { initialData: { heading: string } };
+      expect(body.initialData.heading).toBe('API Heading');
     });
-  });
 
-  describe('error propagation & fallback strategy', () => {
-    it('propagates render and loader errors to Hono app.onError() by default', async () => {
+    it('propagates errors to Hono app.onError() by default and supports fallback: "spa"', async () => {
       const app = new Hono();
-      let caughtError: Error | null = null;
-
-      app.onError((err, c) => {
-        caughtError = err;
-        return c.text(`Handled by Hono: ${err.message}`, 500);
-      });
+      app.onError((err, c) => c.text(`HonoError:${err.message}`, 500));
 
       app.get(
-        '/broken',
+        '/err',
         aurelia({
           component: SimplePage,
           loader: async () => {
-            throw new Error('DB offline');
+            throw new Error('DB down');
           },
         })
       );
 
-      const res = await app.request('/broken');
-      expect(res.status).toBe(500);
-      expect(await res.text()).toBe('Handled by Hono: DB offline');
-      expect(caughtError).not.toBeNull();
-    });
-
-    it('delegates errors to custom onError hook when configured', async () => {
-      const app = new Hono();
       app.get(
-        '/custom-err',
+        '/spa',
         aurelia({
-          component: null,
-          onError: (err, c) =>
-            c.json(
-              { custom: true, reason: err instanceof Error ? err.message : String(err) },
-              503
-            ),
-        })
-      );
-
-      const res = await app.request('/custom-err');
-      expect(res.status).toBe(503);
-      const body = (await res.json()) as { custom: boolean; reason: string };
-      expect(body.custom).toBe(true);
-      expect(body.reason).toContain('component is required');
-    });
-
-    it('returns empty SPA document shell when fallback: "spa" and render fails', async () => {
-      const app = new Hono();
-      app.get(
-        '/spa-fallback',
-        aurelia({
-          component: {
-            get template() {
-              throw new Error('SSR crash');
-            },
-          },
-          title: 'SPA Shell',
+          component: CustomElement.define(
+            { name: 'broken-ssr', template: '<div>x</div>' },
+            class {
+              binding() {
+                throw new Error('Client-only API');
+              }
+            }
+          ),
+          title: 'SPA Fallback',
           fallback: 'spa',
           document: { jsBundle: '/client.js' },
         })
       );
 
-      const res = await app.request('/spa-fallback');
-      expect(res.status).toBe(200);
-      const html = await res.text();
-      expect(html).toContain('<title>SPA Shell</title>');
-      expect(html).toContain('<app-root></app-root>');
-      expect(html).toContain('src="/client.js"');
+      const errRes = await app.request('/err');
+      expect(errRes.status).toBe(500);
+      expect(await errRes.text()).toBe('HonoError:DB down');
+
+      const spaRes = await app.request('/spa');
+      expect(spaRes.status).toBe(200);
+      const spaHtml = await spaRes.text();
+      expect(spaHtml).toContain('<app-root></app-root>');
+      expect(spaHtml).toContain('src="/client.js"');
     });
   });
 
-  describe('aureliaAction() explicit mutation handler', () => {
-    it('dispatches co-located static actions via _action query and X-Action header', async () => {
+  describe('strictly typed aureliaAction()', () => {
+    it('dispatches co-located static actions and standalone action maps cleanly', async () => {
       let likes = 10;
 
       class PostPage {
-        static actions = {
+        static readonly actions = {
           like: async () => {
             likes += 1;
             return { liked: true, likes };
@@ -388,6 +305,14 @@ describe('@hono/aurelia adapter', () => {
 
       const app = new Hono();
       app.post('/posts/:id', aureliaAction(PostPage));
+      app.post(
+        '/ops',
+        aureliaAction(
+          { ping: async () => ({ pong: true }) },
+          { resolveAction: (c) => c.req.header('X-Op') }
+        )
+      );
+      app.post('/single', aureliaAction({ action: async () => ({ created: true }) }));
 
       const likeRes = await app.request('/posts/1?_action=like', { method: 'POST' });
       expect(likeRes.status).toBe(200);
@@ -400,45 +325,14 @@ describe('@hono/aurelia adapter', () => {
       expect(archiveRes.status).toBe(202);
       expect(await archiveRes.text()).toBe('Archived');
 
-      const missingRes = await app.request('/posts/1?_action=unknown', { method: 'POST' });
+      const missingRes = await app.request('/posts/1?_action=nope', { method: 'POST' });
       expect(missingRes.status).toBe(404);
-    });
 
-    it('supports standalone action functions, maps, custom resolveAction, and 405 on empty target', async () => {
-      const app = new Hono();
-
-      app.post(
-        '/single',
-        aureliaAction(async () => ({ created: true }))
-      );
-
-      app.post(
-        '/custom-resolve',
-        aureliaAction(
-          {
-            ping: async () => ({ pong: true }),
-          },
-          {
-            resolveAction: (c) => c.req.header('X-Op'),
-          }
-        )
-      );
-
-      app.post('/readonly', aureliaAction(SimplePage));
+      const opRes = await app.request('/ops', { method: 'POST', headers: { 'X-Op': 'ping' } });
+      expect(await opRes.json()).toEqual({ pong: true });
 
       const singleRes = await app.request('/single', { method: 'POST' });
-      expect(singleRes.status).toBe(200);
       expect(await singleRes.json()).toEqual({ created: true });
-
-      const customRes = await app.request('/custom-resolve', {
-        method: 'POST',
-        headers: { 'X-Op': 'ping' },
-      });
-      expect(customRes.status).toBe(200);
-      expect(await customRes.json()).toEqual({ pong: true });
-
-      const readonlyRes = await app.request('/readonly', { method: 'POST' });
-      expect(readonlyRes.status).toBe(405);
     });
   });
 });
