@@ -36,7 +36,7 @@
   "author": "Sandikodev <androxoss@hotmail.com>",
   "license": "MIT",
   "peerDependencies": {
-    "aurelia": "^2.0.0",
+    "aurelia": "^2.0.0-rc.2",
     "hono": "^4.0.0"
   },
   "dependencies": {
