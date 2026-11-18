@@ -147,6 +147,7 @@ export function aurelia<
     const streaming = config.streaming ?? scoped?.streaming ?? false;
     const dataEndpoint = config.dataEndpoint ?? scoped?.dataEndpoint ?? false;
     const preserveMarkers = config.preserveMarkers ?? scoped?.preserveMarkers ?? true;
+    const engine = config.engine ?? scoped?.engine;
     const fallback = config.fallback ?? compMeta?.fallback ?? scoped?.fallback ?? 'throw';
     const documentOpts = { ...scoped?.document, ...config.document };
     const serializeOpts = config.serialize ?? scoped?.serialize;
@@ -215,6 +216,7 @@ export function aurelia<
         url: c.req.url,
         params: c.req.param(),
         query: c.req.query(),
+        engine,
         preserveMarkers,
         registrations: registrations.length > 0 ? registrations : undefined,
         timeout,

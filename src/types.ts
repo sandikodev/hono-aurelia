@@ -11,6 +11,7 @@ import type {
   AureliaComponent,
   ComponentProps,
   DocumentOptions,
+  SSREngine,
   SerializeOptions,
 } from '@aureliajs/ssr';
 
@@ -18,6 +19,7 @@ export type {
   AureliaComponent,
   ComponentProps,
   DocumentOptions,
+  SSREngine,
   SerializeOptions,
 } from '@aureliajs/ssr';
 
@@ -85,6 +87,11 @@ export interface AureliaRouteConfig<
   status?: ContentfulStatusCode | ((data: TData, c: Context<E>) => ContentfulStatusCode);
   loader?: AureliaLoader<E, TData>;
   /**
+   * DOM emulation engine to use (`'auto'` | `'jsdom'` | `'linkedom'`).
+   * Defaults to `'auto'`, which uses `'linkedom'` on Cloudflare Workers / Edge and `'jsdom'` on Node/Bun.
+   */
+  engine?: SSREngine;
+  /**
    * Custom request context extractor for `IRequestContext.data`.
    * Defaults to Hono's `c.var`.
    */
@@ -131,6 +138,7 @@ export interface AureliaActionOptions<E extends Env = Env> {
 export interface AureliaDefaultsOptions<E extends Env = Env> {
   document?: DocumentOptions;
   serialize?: SerializeOptions;
+  engine?: SSREngine;
   streaming?: boolean;
   dataEndpoint?: boolean;
   preserveMarkers?: boolean;
