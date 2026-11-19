@@ -118,6 +118,14 @@ export function aurelia<
   TData extends Record<string, unknown> = ComponentProps<TComponent>,
 >(
   component: AureliaComponent<TComponent>,
+  options?: Omit<AureliaRouteConfig<E, TComponent, TData>, 'component'>
+): (c: Context<E>) => Promise<Response>;
+export function aurelia<
+  E extends Env = Env,
+  TComponent extends object = object,
+  TData extends Record<string, unknown> = ComponentProps<TComponent>,
+>(
+  component: AureliaComponent<TComponent>,
   title?: string | ((data: TData, c: Context<E>) => string)
 ): (c: Context<E>) => Promise<Response>;
 export function aurelia<
@@ -128,13 +136,29 @@ export function aurelia<
   configOrComponent:
     | AureliaRouteConfig<E, TComponent, TData>
     | AureliaComponent<TComponent>,
-  maybeTitle?: string | ((data: TData, c: Context<E>) => string)
+  maybeConfigOrTitle?:
+    | string
+    | ((data: TData, c: Context<E>) => string)
+    | Omit<AureliaRouteConfig<E, TComponent, TData>, 'component'>
 ): (c: Context<E>) => Promise<Response> {
-  const config: AureliaRouteConfig<E, TComponent, TData> = isRouteConfig<E, TComponent, TData>(
-    configOrComponent
-  )
-    ? configOrComponent
-    : { component: configOrComponent, title: maybeTitle };
+  let config: AureliaRouteConfig<E, TComponent, TData>;
+  if (isRouteConfig<E, TComponent, TData>(configOrComponent)) {
+    config = configOrComponent;
+  } else if (
+    maybeConfigOrTitle &&
+    typeof maybeConfigOrTitle === 'object' &&
+    typeof maybeConfigOrTitle !== 'function'
+  ) {
+    config = {
+      component: configOrComponent,
+      ...maybeConfigOrTitle,
+    };
+  } else {
+    config = {
+      component: configOrComponent,
+      title: maybeConfigOrTitle as string | ((data: TData, c: Context<E>) => string) | undefined,
+    };
+  }
 
   const compMeta = config.component as unknown as
     | AureliaRouteComponent<E, TComponent, TData>
