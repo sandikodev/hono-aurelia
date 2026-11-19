@@ -39,6 +39,7 @@ const defaultsByRequest = new WeakMap<Request, unknown>();
 
 /**
  * Hono middleware registering router-scoped defaults for downstream `aurelia()` handlers.
+ * Canonical alias: `aureliaRenderer` (matching `@hono/react-renderer` mental model).
  */
 export function aureliaDefaults<E extends Env = Env>(
   defaults: AureliaDefaultsOptions<E>
@@ -57,6 +58,11 @@ export function aureliaDefaults<E extends Env = Env>(
     await next();
   };
 }
+
+/**
+ * Idiomatic Hono alias matching the `@hono/react-renderer` middleware naming convention.
+ */
+export const aureliaRenderer = aureliaDefaults;
 
 function acceptsJsonOverHtml(acceptHeader?: string): boolean {
   if (!acceptHeader || !acceptHeader.includes('application/json')) return false;

@@ -8,6 +8,7 @@ export {
   aurelia,
   aureliaAction,
   aureliaDefaults,
+  aureliaRenderer,
 } from './adapter.js';
 
 export {

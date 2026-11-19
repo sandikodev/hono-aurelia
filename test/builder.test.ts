@@ -6,9 +6,9 @@ import { buildClient, buildWorker } from '../src/builder.js';
 describe('@hono/aurelia Fullstack Build Engine', () => {
   const exampleRoot = resolve(import.meta.dir, '../../../examples/fullstack-ssr');
 
-  it('compiles client hydration bundle via auto-discovery without src/client.ts', async () => {
-    // Assert src/client.ts does NOT exist in example scaffold
-    expect(existsSync(resolve(exampleRoot, 'src/client.ts'))).toBe(false);
+  it('compiles client hydration bundle from src/client.ts entrypoint', async () => {
+    // Assert src/client.ts exists in example scaffold (standard Hono client entrypoint)
+    expect(existsSync(resolve(exampleRoot, 'src/client.ts'))).toBe(true);
 
     const result = await buildClient({
       root: exampleRoot,

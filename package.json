@@ -6,9 +6,6 @@
   "sideEffects": false,
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "bin": {
-    "hono-aurelia": "./dist/cli.js"
-  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -24,11 +21,6 @@
       "types": "./dist/builder.d.ts",
       "import": "./dist/builder.js",
       "default": "./dist/builder.js"
-    },
-    "./cli": {
-      "types": "./dist/cli.d.ts",
-      "import": "./dist/cli.js",
-      "default": "./dist/cli.js"
     }
   },
   "scripts": {

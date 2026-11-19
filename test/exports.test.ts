@@ -7,6 +7,7 @@ describe('@hono/aurelia exports contract', () => {
     expect(Root.aurelia).toBeDefined();
     expect(Root.aureliaAction).toBeDefined();
     expect(Root.aureliaDefaults).toBeDefined();
+    expect(Root.aureliaRenderer).toBe(Root.aureliaDefaults);
     expect(Root.VERSION).toBe('1.0.0-alpha.1');
 
     // Strict boundary: no SSR engine re-exports, no global mutable state, no static file server
@@ -24,5 +25,6 @@ describe('@hono/aurelia exports contract', () => {
     expect(Server.aurelia).toBe(Root.aurelia);
     expect(Server.aureliaAction).toBe(Root.aureliaAction);
     expect(Server.aureliaDefaults).toBe(Root.aureliaDefaults);
+    expect(Server.aureliaRenderer).toBe(Root.aureliaRenderer);
   });
 });
