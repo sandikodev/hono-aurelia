@@ -10,6 +10,16 @@ export {
   aureliaDefaults,
 } from './adapter.js';
 
+export {
+  buildClient,
+  buildWorker,
+  createVirtualClientPlugin,
+  stubJsdomPlugin,
+  type ClientBuildOptions,
+  type WorkerBuildOptions,
+  type BuildOutputStats,
+} from './builder.js';
+
 export type {
   AureliaActionHandler,
   AureliaActionMap,

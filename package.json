@@ -6,6 +6,9 @@
   "sideEffects": false,
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "hono-aurelia": "./dist/cli.js"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -16,6 +19,16 @@
       "types": "./dist/server.d.ts",
       "import": "./dist/server.js",
       "default": "./dist/server.js"
+    },
+    "./build": {
+      "types": "./dist/builder.d.ts",
+      "import": "./dist/builder.js",
+      "default": "./dist/builder.js"
+    },
+    "./cli": {
+      "types": "./dist/cli.d.ts",
+      "import": "./dist/cli.js",
+      "default": "./dist/cli.js"
     }
   },
   "scripts": {
@@ -45,6 +58,7 @@
   "devDependencies": {
     "@types/node": "^20.10.0",
     "aurelia": "^2.0.0-rc.2",
+    "bun-types": "^1.4.4",
     "hono": "^4.0.0",
     "typescript": "^5.3.2"
   }
