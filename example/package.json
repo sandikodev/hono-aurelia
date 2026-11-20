@@ -17,7 +17,7 @@
   },
   "dependencies": {
     "@aureliajs/ssr": "workspace:*",
-    "@hono/aurelia": "link:..",
+    "@hono/aurelia": "file:..",
     "@hono/node-server": "^1.12.0",
     "aurelia": "^2.0.0-rc.2",
     "hono": "^4.0.0"
