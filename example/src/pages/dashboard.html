@@ -1,0 +1,111 @@
+<div class="dashboard-view">
+  <nav class="navbar">
+    <div class="nav-container">
+      <div class="brand">
+        <a href="/" class="brand-link">
+          <svg class="brand-logo" width="24" height="24" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="50" cy="50" r="46" stroke="#ed2578" stroke-width="8"/>
+            <circle cx="50" cy="50" r="24" fill="#ed2578"/>
+          </svg>
+          <span class="brand-title">Aurelia <span class="brand-accent">2</span></span>
+          <span class="brand-divider">/</span>
+          <span class="brand-sub">Hono SSR</span>
+        </a>
+      </div>
+      <div class="status-capsule">
+        <span class="status-dot"></span>
+        <span>Telemetry Live</span>
+      </div>
+      <div class="nav-links">
+        <a href="/" class="nav-item">Overview</a>
+        <a href="/dashboard?token=demo-token" class="nav-item is-active">Telemetry</a>
+        <a href="/api/posts" target="_blank" class="nav-item">API (JSON)</a>
+      </div>
+    </div>
+  </nav>
+
+  <main class="page-container">
+    <header class="dashboard-header">
+      <div>
+        <h1 class="dashboard-title">${stats.title}</h1>
+        <p class="dashboard-sub">
+          Session authenticated as <strong>${user ? user.name : 'Operator'}</strong> (${role || 'Owner'}) &middot; Guarded by Hono <code>requireAuth</code> middleware
+        </p>
+      </div>
+      <button click.trigger="refresh()" class="btn btn-outline" disabled.bind="loading">
+        <span if.bind="!loading">🔄</span>
+        <span if.bind="loading">⏳</span>
+        ${loading ? 'Refreshing Metrics...' : 'Refresh Metrics'}
+      </button>
+    </header>
+
+    <!-- Metrics Cards with Meters -->
+    <div class="metrics-grid">
+      <div class="metric-card">
+        <div class="metric-top">
+          <span class="metric-label">Monthly Impressions</span>
+          <span class="metric-trend is-up">+18.4% WoW</span>
+        </div>
+        <div class="metric-value">${stats.views.toLocaleString()}</div>
+        <div class="metric-meter">
+          <div class="metric-meter-bar" style="width: 82%;"></div>
+        </div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-top">
+          <span class="metric-label">Published Articles</span>
+          <span class="metric-trend is-up">100% Hydrated</span>
+        </div>
+        <div class="metric-value">${stats.posts}</div>
+        <div class="metric-meter">
+          <div class="metric-meter-bar" style="width: 65%;"></div>
+        </div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-top">
+          <span class="metric-label">Audience Engagement</span>
+          <span class="metric-trend is-up">Top Decile</span>
+        </div>
+        <div class="metric-value">${stats.engagement}%</div>
+        <div class="metric-meter">
+          <div class="metric-meter-bar" style="width: 94%;"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Audit & Deployment Stream -->
+    <section class="audit-stream-card">
+      <div class="audit-stream-header">
+        <h3 class="audit-stream-title">Real-Time Audit &amp; Deployment Trail</h3>
+        <span class="section-badge">Live Event Stream</span>
+      </div>
+      <div repeat.for="item of activity" class="comment-item" style="padding: 1rem 0;">
+        <div class="comment-author">
+          <div style="display: flex; align-items: center; gap: 0.65rem;">
+            <span class="audit-pill ${item.type === 'post' ? 'pill-post' : (item.type === 'like' ? 'pill-like' : 'pill-comment')}">
+              ${item.type}
+            </span>
+            <span>${item.action}</span>
+          </div>
+          <span class="comment-date" style="font-family: var(--font-mono);">${item.timestamp}</span>
+        </div>
+        <div style="font-size: 0.82rem; color: var(--text-dim); margin-left: 0.2rem;">
+          Verified Edge Event &middot; Node/Bun Isolated Worker Scope
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <div class="footer-brand">
+        <strong>Aurelia 2</strong> / Hono Fullstack Reference Architecture &middot; Enterprise Monorepo
+      </div>
+      <div class="footer-tech">
+        <span>Bun 1.4+</span> &middot; <span>workerd</span> &middot; <span>LinkeDOM</span> &middot; <span>Zero Glue Code</span>
+      </div>
+    </div>
+  </footer>
+</div>

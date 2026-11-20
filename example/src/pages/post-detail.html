@@ -1,0 +1,153 @@
+<div class="post-detail-view">
+  <nav class="navbar">
+    <div class="nav-container">
+      <div class="brand">
+        <a href="/" class="brand-link">
+          <svg class="brand-logo" width="24" height="24" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="50" cy="50" r="46" stroke="#ed2578" stroke-width="8"/>
+            <circle cx="50" cy="50" r="24" fill="#ed2578"/>
+          </svg>
+          <span class="brand-title">Aurelia <span class="brand-accent">2</span></span>
+          <span class="brand-divider">/</span>
+          <span class="brand-sub">Hono SSR</span>
+        </a>
+      </div>
+      <div class="status-capsule">
+        <span class="status-dot"></span>
+        <span>Edge SSR Active</span>
+      </div>
+      <div class="nav-links">
+        <a href="/" class="nav-item">Overview</a>
+        <a href="/dashboard?token=demo-token" class="nav-item">Telemetry</a>
+        <a href="/api/posts" target="_blank" class="nav-item">API (JSON)</a>
+      </div>
+    </div>
+  </nav>
+
+  <main class="article-container">
+    <div if.bind="!post" class="not-found-box">
+      <h2>Article Not Found</h2>
+      <p>The requested technical publication does not exist or has been relocated.</p>
+      <a href="/" class="btn btn-primary">Back to Publications Overview</a>
+    </div>
+
+    <div if.bind="post">
+      <header class="article-header">
+        <nav class="breadcrumb" aria-label="Breadcrumb">
+          <a href="/">← Overview</a>
+          <span class="breadcrumb-sep">/</span>
+          <span class="category-chip ${getCategoryClass(post.category)}">
+            ${post.category}
+          </span>
+        </nav>
+        <h1 class="article-title">${post.title}</h1>
+        <div class="article-meta">
+          <div class="author-chip">
+            <span class="avatar-initials">${post.author.slice(0, 2).toUpperCase()}</span>
+            <span>By <strong>${post.author}</strong></span>
+          </div>
+          <span class="meta-dot">&middot;</span>
+          <span class="meta-item">📅 ${post.date}</span>
+          <span class="meta-dot">&middot;</span>
+          <span class="meta-item">⏱️ ${post.readTime}</span>
+        </div>
+      </header>
+
+      <!-- Seamless Reading Canvas (No Box / No Border) -->
+      <article class="article-body" innerhtml.bind="post.content">
+      </article>
+
+      <!-- Interactive Claps Bar -->
+      <div class="interaction-bar">
+        <div class="interaction-text">
+          <div class="interaction-title">
+            Enjoyed this architectural write-up?
+          </div>
+          <div class="interaction-desc">
+            Your feedback triggers a real-time server mutation on Hono.
+          </div>
+        </div>
+        <button click.trigger="clap()" class="btn btn-clap" disabled.bind="clapping">
+          👏 ${post.claps} ${post.claps === 1 ? 'Clap' : 'Claps'}
+        </button>
+      </div>
+
+      <!-- Comments Section -->
+      <section class="comments-section">
+        <div class="comments-header">
+          <h3 class="comments-title">Discussion</h3>
+          <span class="section-badge">${post.comments.length} Responses</span>
+        </div>
+
+        <div if.bind="post.comments.length === 0" class="comments-empty">
+          💬 No responses yet. Be the first engineer to share your thoughts!
+        </div>
+
+        <div repeat.for="comment of post.comments" class="comment-item">
+          <div class="comment-author">
+            <div class="comment-author-info">
+              <span class="avatar-initials" style="width: 24px; height: 24px; font-size: 0.68rem;">
+                ${comment.author.slice(0, 2).toUpperCase()}
+              </span>
+              <span>${comment.author}</span>
+            </div>
+            <span class="comment-date">${comment.date}</span>
+          </div>
+          <p class="comment-text">${comment.text}</p>
+        </div>
+
+        <!-- Add Comment Form -->
+        <form submit.trigger="addComment($event)" class="comment-form">
+          <div class="form-group">
+            <label for="comment-author" class="form-label">
+              Engineer Name or Handle:
+            </label>
+            <input 
+              type="text" 
+              id="comment-author"
+              name="author"
+              value.bind="newAuthor" 
+              placeholder="e.g. Linus Torvalds (@linus)" 
+              class="form-input" 
+              autocomplete="name"
+              required 
+            />
+          </div>
+
+          <div class="form-group">
+            <label for="comment-text" class="form-label">
+              Comment Perspective:
+            </label>
+            <textarea 
+              id="comment-text"
+              name="comment"
+              value.bind="newComment" 
+              placeholder="Share constructive insights on SSR hydration, DOM memory benchmarks, or DI patterns..." 
+              rows="3" 
+              class="form-textarea" 
+              required
+            ></textarea>
+          </div>
+
+          <div class="form-actions">
+            <span class="form-hint">Dispatched via Hono typed action</span>
+            <button type="submit" class="btn btn-primary" disabled.bind="submitting || !newComment">
+              ${submitting ? 'Posting Comment...' : 'Post Perspective 💬'}
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <div class="footer-brand">
+        <strong>Aurelia 2</strong> / Hono Fullstack Reference Architecture &middot; Enterprise Monorepo
+      </div>
+      <div class="footer-tech">
+        <span>Bun 1.4+</span> &middot; <span>workerd</span> &middot; <span>LinkeDOM</span> &middot; <span>Zero Glue Code</span>
+      </div>
+    </div>
+  </footer>
+</div>

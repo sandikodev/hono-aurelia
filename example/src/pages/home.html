@@ -1,0 +1,189 @@
+<div class="home-view">
+  <nav class="navbar">
+    <div class="nav-container">
+      <div class="brand">
+        <a href="/" class="brand-link">
+          <svg class="brand-logo" width="24" height="24" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="50" cy="50" r="46" stroke="#ed2578" stroke-width="8"/>
+            <circle cx="50" cy="50" r="24" fill="#ed2578"/>
+          </svg>
+          <span class="brand-title">Aurelia <span class="brand-accent">2</span></span>
+          <span class="brand-divider">/</span>
+          <span class="brand-sub">Hono SSR</span>
+        </a>
+      </div>
+      <div class="status-capsule">
+        <span class="status-dot"></span>
+        <span>Edge SSR Active</span>
+      </div>
+      <div class="nav-links">
+        <a href="/" class="nav-item is-active">Overview</a>
+        <a href="/dashboard?token=demo-token" class="nav-item">Telemetry</a>
+        <a href="/api/posts" target="_blank" class="nav-item">API (JSON)</a>
+      </div>
+    </div>
+  </nav>
+
+  <main class="page-container">
+    <section class="hero">
+      <div class="hero-eyebrow">
+        <span>⚡</span> Hono Edge Architecture + Aurelia 2 SSR
+      </div>
+      <h1>
+        Enterprise Architecture meets <br/>
+        <span class="hero-gradient-text">Modern Edge Velocity</span>
+      </h1>
+      <p class="hero-subtitle">
+        Real native DOM server-side rendering powered by Hono and LinkeDOM. Zero Virtual-DOM overhead, request-isolated DI scopes, and instantaneous Web Streams progressive hydration.
+      </p>
+      <div class="hero-actions">
+        <a href="#articles" class="btn btn-primary">
+          Explore Articles ↓
+        </a>
+        <a href="/dashboard?token=demo-token" class="btn btn-outline">
+          Telemetry Dashboard ⚡
+        </a>
+        <a href="/api/posts" target="_blank" class="btn btn-outline" style="border-style: dashed;">
+          Raw JSON Endpoint →
+        </a>
+      </div>
+
+      <!-- KPI Performance Strip -->
+      <div class="kpi-bar">
+        <div class="kpi-item">
+          <div class="kpi-val accent-magenta">&lt; 1.8ms</div>
+          <div class="kpi-desc">LinkeDOM SSR Render Time</div>
+        </div>
+        <div class="kpi-item">
+          <div class="kpi-val accent-cyan">0 KB</div>
+          <div class="kpi-desc">Client Virtual-DOM Overhead</div>
+        </div>
+        <div class="kpi-item">
+          <div class="kpi-val accent-emerald">100%</div>
+          <div class="kpi-desc">Safe Request Isolation</div>
+        </div>
+        <div class="kpi-item">
+          <div class="kpi-val">1-Liner</div>
+          <div class="kpi-desc">Declarative Route &amp; Actions</div>
+        </div>
+      </div>
+    </section>
+
+    <div id="articles" class="section-header">
+      <div class="section-title-wrap">
+        <h2 class="section-title">Featured Engineering Articles</h2>
+        <span class="section-badge">${posts.length} Publications</span>
+      </div>
+      <button click.trigger="refresh()" class="btn btn-outline" disabled.bind="loading">
+        <span if.bind="!loading">🔄</span>
+        <span if.bind="loading">⏳</span>
+        ${loading ? 'Refreshing State...' : 'Refresh Data'}
+      </button>
+    </div>
+
+    <!-- Posts Grid -->
+    <div class="cards-grid">
+      <article repeat.for="post of posts" class="card">
+        <div class="card-top">
+          <span class="category-chip ${getCategoryClass(post.category)}">
+            ${post.category}
+          </span>
+          <span class="card-read-time">⏱️ ${post.readTime}</span>
+        </div>
+        <h3 class="card-title">
+          <a href="${'/posts/' + post.slug}">${post.title}</a>
+        </h3>
+        <p class="card-excerpt">${post.excerpt}</p>
+        <div class="card-footer">
+          <div class="author-chip">
+            <span class="avatar-initials">${post.author.slice(0, 2).toUpperCase()}</span>
+            <span>${post.author}</span>
+          </div>
+          <div class="claps-pill">
+            <span>👏</span>
+            <span>${post.claps}</span>
+          </div>
+        </div>
+      </article>
+    </div>
+
+    <!-- Architecture Comparison Matrix Section -->
+    <section class="comparison-card">
+      <div class="comparison-header">
+        <h3>Why Aurelia 2 SSR over React Server Components (RSC)?</h3>
+        <p>
+          Compare the engineering trade-offs between serializing complex Virtual-DOM fiber graphs versus executing directly against Web Standards with real DOM semantics.
+        </p>
+      </div>
+
+      <div class="comparison-grid">
+        <div class="comparison-col is-rsc">
+          <div class="comparison-col-header">
+            <span class="comparison-col-title" style="color: #94a3b8;">React Server Components (RSC)</span>
+            <span style="font-size: 0.8rem; color: #ef4444; font-weight: 600;">Heavy Boundary Tax</span>
+          </div>
+          <ul class="comparison-list">
+            <li class="comparison-item">
+              <span class="comparison-icon" style="color: #ef4444;">✕</span>
+              <span>Mandates artificial <code>'use client'</code> and <code>'use server'</code> execution boundaries.</span>
+            </li>
+            <li class="comparison-item">
+              <span class="comparison-icon" style="color: #ef4444;">✕</span>
+              <span>Heavy fiber reconciler bundled to browser (~45 KB+ baseline runtime).</span>
+            </li>
+            <li class="comparison-item">
+              <span class="comparison-icon" style="color: #ef4444;">✕</span>
+              <span>Serializes complex flight JSON wire streams; difficult to debug or inspect.</span>
+            </li>
+            <li class="comparison-item">
+              <span class="comparison-icon" style="color: #ef4444;">✕</span>
+              <span>Vendor lock-in often tightly coupled to proprietary hosting platforms.</span>
+            </li>
+          </ul>
+        </div>
+
+        <div class="comparison-col is-aurelia">
+          <div class="comparison-col-header">
+            <span class="comparison-col-title" style="color: #ff5297;">Aurelia 2 + Hono SSR</span>
+            <span style="font-size: 0.8rem; color: #10b981; font-weight: 600;">Direct Web Standards</span>
+          </div>
+          <ul class="comparison-list">
+            <li class="comparison-item">
+              <span class="comparison-icon" style="color: #10b981;">✓</span>
+              <span>Standard TypeScript classes and POJO ViewModels with zero boundary boilerplate.</span>
+            </li>
+            <li class="comparison-item">
+              <span class="comparison-icon" style="color: #10b981;">✓</span>
+              <span>Operates directly on standard native DOM platform with light-DOM slot projections (<code>&lt;au-slot&gt;</code>).</span>
+            </li>
+            <li class="comparison-item">
+              <span class="comparison-icon" style="color: #10b981;">✓</span>
+              <span>First-class Enterprise Dependency Injection container (Spring &amp; C# grade IoC).</span>
+            </li>
+            <li class="comparison-item">
+              <span class="comparison-icon" style="color: #10b981;">✓</span>
+              <span>Thin Hono adapter: runs seamlessly on Bun, Cloudflare Workers, Node, or Deno.</span>
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      <div style="text-align: center; margin-top: 1.5rem;">
+        <a href="https://github.com/sandikodev/hono-aurelia" target="_blank" class="btn btn-primary">
+          Explore Architecture &amp; Reverse Engineering Spec →
+        </a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <div class="footer-brand">
+        <strong>Aurelia 2</strong> / Hono Fullstack Reference Architecture &middot; Enterprise Monorepo
+      </div>
+      <div class="footer-tech">
+        <span>Bun 1.4+</span> &middot; <span>workerd</span> &middot; <span>LinkeDOM</span> &middot; <span>Zero Glue Code</span>
+      </div>
+    </div>
+  </footer>
+</div>
