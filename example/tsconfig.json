@@ -20,7 +20,9 @@
     "types": ["bun-types", "node"],
     "paths": {
       "@/*": ["./src/*"],
-      "@components/*": ["./src/components/*"]
+      "@components/*": ["./src/components/*"],
+      "@hono/aurelia": ["../src/index.ts"],
+      "@hono/aurelia/*": ["../src/*.ts"]
     }
   },
   "include": ["src/**/*"],

@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs';
 import { buildClient, buildWorker } from '../src/builder.js';
 
 describe('@hono/aurelia Fullstack Build Engine', () => {
-  const exampleRoot = resolve(import.meta.dir, '../../../examples/fullstack-ssr');
+  const exampleRoot = resolve(import.meta.dir, '../example');
 
   it('compiles client hydration bundle from src/client.ts entrypoint', async () => {
     // Assert src/client.ts exists in example scaffold (standard Hono client entrypoint)
