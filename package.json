@@ -23,6 +23,9 @@
       "default": "./dist/builder.js"
     }
   },
+  "workspaces": [
+    "example"
+  ],
   "scripts": {
     "build": "tsc",
     "test": "bun test",
