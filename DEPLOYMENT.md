@@ -652,5 +652,5 @@ app.use(async (c, next) => {
 ## See Also
 
 - [README.md](./README.md) — Library documentation
-- [examples/fullstack-ssr/](../../examples/fullstack-ssr/) — Complete example
+- [example/](./example/) — Complete example
 - [Hono deployment guide](https://hono.dev/guides/deploy)
