@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'bun:test';
 import * as Root from '../src/index.js';
 import * as Server from '../src/server.js';
+import * as Client from '../src/client.js';
 
 describe('@hono/aurelia exports contract', () => {
   it('exposes pure thin Hono adapter primitives at root (.)', () => {
@@ -10,7 +11,7 @@ describe('@hono/aurelia exports contract', () => {
     expect(Root.aureliaRenderer).toBe(Root.aureliaDefaults);
     expect(Root.VERSION).toBe('1.0.0-alpha.1');
 
-    // Strict boundary: no SSR engine re-exports, no global mutable state, no static file server
+    // Strict boundary: no SSR engine re-exports at root, no global mutable state, no static file server
     const record = Root as Record<string, unknown>;
     expect(record.renderAurelia).toBeUndefined();
     expect(record.renderToString).toBeUndefined();
@@ -26,5 +27,19 @@ describe('@hono/aurelia exports contract', () => {
     expect(Server.aureliaAction).toBe(Root.aureliaAction);
     expect(Server.aureliaDefaults).toBe(Root.aureliaDefaults);
     expect(Server.aureliaRenderer).toBe(Root.aureliaRenderer);
+  });
+
+  it('exposes client hydration primitives at ./client with zero Hono/server leakage', () => {
+    expect(Client.createClientHydrator).toBeDefined();
+    expect(Client.hydrateFromServer).toBeDefined();
+    expect(Client.isHydrationAvailable).toBeDefined();
+    expect(Client.peekHydrationPayload).toBeDefined();
+    expect(Client.clearHydration).toBeDefined();
+
+    // Verify zero server adapter leakage into client bundle
+    const clientRecord = Client as Record<string, unknown>;
+    expect(clientRecord.aurelia).toBeUndefined();
+    expect(clientRecord.aureliaAction).toBeUndefined();
+    expect(clientRecord.aureliaDefaults).toBeUndefined();
   });
 });

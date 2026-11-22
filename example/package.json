@@ -16,7 +16,6 @@
     "lint": "bunx oxlint src"
   },
   "dependencies": {
-    "@aureliajs/ssr": "workspace:*",
     "@hono/aurelia": "file:..",
     "@hono/node-server": "^1.12.0",
     "aurelia": "^2.0.0-rc.2",

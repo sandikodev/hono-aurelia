@@ -19,12 +19,12 @@
 - Request-scoped default options via `aureliaDefaults()` backed by `WeakMap<Request, ...>`.
 - True incremental HTTP streaming using standard Web Streams (`ReadableStream` + `TextEncoder`).
 - Opt-in content negotiation (`Accept: application/json`) when `dataEndpoint: true`.
+- Client hydration runtime entrypoint via `@hono/aurelia/client` with zero server-adapter or Hono leakage into browser bundles.
 - End-to-end TypeScript generics across Hono `Env`, component `ComponentProps<TComponent>`, and loader `TData`.
 
 ### What `@hono/aurelia` Explicitly DOES NOT OWN
 - **Authentication & Authorization**: Use composable Hono middleware (`createMiddleware`) before `aurelia(...)` — never `requiresAuth` flags hidden inside a view renderer.
 - **Static Asset Serving**: Use official `@hono/node-server/serve-static`, `hono/bun`, or `hono/cloudflare-workers` — `@hono/aurelia` has **zero `node:fs` / `node:path` imports**.
-- **Client Hydration Runtime**: Browser code imports directly from `@aureliajs/ssr/client` so there is zero server-adapter leakage into browser bundles.
 - **Global Mutable Singletons**: No `setAureliaDefaults()` global state; everything is scoped to the HTTP `Request` lifecycle.
 
 ---
@@ -48,7 +48,7 @@
 ## 3. Installation
 
 ```bash
-bun add @hono/aurelia @aureliajs/ssr aurelia hono
+bun add @hono/aurelia aurelia hono
 ```
 
 ---
@@ -122,10 +122,10 @@ export default app;
 
 ### Client Hydration Entrypoint
 
-Pair your Hono server with `@aureliajs/ssr/client` in your browser entry file:
+Pair your Hono server with `@hono/aurelia/client` in your browser entry file:
 
 ```ts
-import { createClientHydrator } from '@aureliajs/ssr/client';
+import { createClientHydrator } from '@hono/aurelia/client';
 import { HomePage } from './pages/home.aux';
 import { PostDetailPage } from './pages/post-detail.aux';
 import { DashboardPage } from './pages/dashboard.aux';
