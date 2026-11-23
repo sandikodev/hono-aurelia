@@ -146,19 +146,48 @@ await createClientHydrator({
 | `aureliaAction` | `aureliaAction<E>(source, options?): Handler<E>` | Dispatches HTTP mutations to a component's static `actions` map or standalone `AureliaActionMap<E>` by `?_action=name` or form field `_action`. |
 | `aureliaDefaults` | `aureliaDefaults<E>(defaults): MiddlewareHandler<E>` | Registers request-scoped defaults via `WeakMap<Request>`. |
 
-Subpath exports: `.` and `./server` (both export identical server primitives).
+Subpath exports: `.`, `./server` (identical server primitives), `./client` (hydration runtime), and `./build` (client/Worker bundlers).
 
 ---
 
-## 6. Known Limitations & Open Areas for Community Improvement
+## 6. Deployment & Live Example
+
+The reference implementation in [`example/`](./example/README.md) is deployed
+to Cloudflare Workers as **`aurelia-hono-ssr`** and served from
+**https://aurelia-hono-ssr.sandiko.workers.dev** (redeployed 23 November 2026).
+
+Deployment is intentionally a two-step build:
+
+```bash
+cd packages/hono-aurelia/example
+bun run build           # client bundle + typecheck
+bun run build:worker    # → dist/worker.js
+bun run deploy:worker   # wrangler deploy (build also runs via wrangler.toml)
+```
+
+`buildWorker()` from `@hono/aurelia/build` uses `Bun.build` with a `jsdom` stub
+so the LinkeDOM SSR path is active in `workerd`, defines `WORKER=true`, and
+leaves `@hono/aurelia` itself free of `node:*` imports. The example uses a Hono
+`staticAssets()` middleware: the `ASSETS` binding serves `./public` on Workers,
+while `import.meta.url` is only resolved for the local Bun filesystem fallback.
+
+The adapter stays platform-neutral: Vercel, Bun/Node servers and containers are
+equally valid targets; the Worker deployment above is proof of the edge path,
+not a framework requirement. See the
+[example deployment guide](./example/README.md#deployment) for commands,
+bindings and live smoke tests.
+
+---
+
+## 7. Known Limitations & Open Areas for Community Improvement
 
 1. **Streaming Error Handling After Preamble Flush**: Once `shell.preamble` is flushed in `streaming: true` mode, HTTP status code `200` is already committed to the wire (a fundamental property of HTTP/1.1 & HTTP/2 streaming). Contributors interested in out-of-order streaming error boundaries or trailer headers are welcome to propose RFCs.
-2. **Edge Runtime Compatibility**: `@hono/aurelia` itself is 100% Web-Standards and Edge-safe (zero `node:*` imports). True Cloudflare Workers / Deno Deploy execution depends on `@aureliajs/ssr` gaining a non-JSDOM lightweight DOM backend.
+2. **Edge Runtime Compatibility**: `@hono/aurelia` itself is 100% Web-Standards and Edge-safe (zero `node:*` imports). Cloudflare Workers execution is proven by the live example via `buildWorker()` with the LinkeDOM path; broader parity (e.g. Deno Deploy and environments without a Worker-style asset binding) still depends on `@aureliajs/ssr` DOM-backend work.
 3. **CSRF & Progressive Form Enhancement Helpers**: `aureliaAction()` intentionally stays minimal and delegates CSRF validation to standard Hono middleware (`hono/csrf`), while richer progressive-enhancement helpers for `<form>` submissions can be explored cleanly as optional add-ons.
 
 ---
 
-## 7. Testing
+## 8. Testing
 
 ```bash
 cd packages/hono-aurelia

@@ -31,10 +31,8 @@
   "files": [
     "dist"
   ],
-  "workspaces": [
-    "example"
-  ],
   "scripts": {
+    "dev": "tsc -w --preserveWatchOutput",
     "build": "tsc",
     "test": "bun test",
     "test:watch": "bun test --watch",

@@ -13,7 +13,6 @@ export interface StaticAssetOptions {
 }
 
 export function staticAssets(options: StaticAssetOptions = {}): MiddlewareHandler {
-  const root = options.root ?? new URL('../public/', import.meta.url);
   const prefix = options.publicPrefix ?? '/public';
   const maxAge = options.maxAge ?? 3600;
 
@@ -43,7 +42,11 @@ export function staticAssets(options: StaticAssetOptions = {}): MiddlewareHandle
     }
 
     // 2. Local Bun native zero-copy static asset serving
+    // `import.meta.url` is only meaningful in the Bun/Node bundle. Resolving it
+    // at module scope breaks Cloudflare Workers validation ("Invalid URL string"),
+    // so keep it lazy and only touch it on the local runtime path.
     if (typeof Bun !== 'undefined') {
+      const root = options.root ?? new URL('../public/', import.meta.url);
       const isPublic = url.pathname.startsWith(prefix);
       const isStaticExt = /\.(css|js|map|json|ico|svg|woff2?|png|jpg)$/i.test(url.pathname);
       if (isPublic || isStaticExt) {
