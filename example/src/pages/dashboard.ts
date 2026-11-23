@@ -43,4 +43,10 @@ export class DashboardPage implements ICustomElementViewModel {
       this.loading = false;
     }
   }
+
+  public getPillClass(type?: string): string {
+    if (type === 'post') return 'pill-post';
+    if (type === 'like') return 'pill-like';
+    return 'pill-comment';
+  }
 }

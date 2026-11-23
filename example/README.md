@@ -17,9 +17,10 @@ Wrangler:
 
 **https://aurelia-hono-ssr.sandiko.workers.dev**
 
-It was redeployed on **23 November 2026** from this directory. The home page,
-`/health`, and the authenticated JSON endpoint were verified against the live
-deployment. See [Deployment](#deployment) for the exact commands.
+It was redeployed on **23 November 2026** from this directory. Re-verified the
+same day: `GET /` and `GET /health` both returned **200**. The authenticated
+JSON endpoint (`/api/dashboard/stats?token=demo-token`) and the 401 guard were
+also checked. See [Deployment](#deployment) for the exact commands.
 
 ## Quick Start
 

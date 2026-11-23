@@ -84,7 +84,7 @@
       <div repeat.for="item of activity" class="comment-item" style="padding: 1rem 0;">
         <div class="comment-author">
           <div style="display: flex; align-items: center; gap: 0.65rem;">
-            <span class="audit-pill ${item.type === 'post' ? 'pill-post' : (item.type === 'like' ? 'pill-like' : 'pill-comment')}">
+            <span class="audit-pill ${getPillClass(item.type)}">
               ${item.type}
             </span>
             <span>${item.action}</span>
