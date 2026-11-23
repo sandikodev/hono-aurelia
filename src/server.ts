@@ -1,4 +1,4 @@
 /**
  * @hono/aurelia Server Entrypoint
  */
-export * from './index.js';
+export * from './index';

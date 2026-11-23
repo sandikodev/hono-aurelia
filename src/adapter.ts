@@ -29,7 +29,7 @@ import type {
   AureliaDefaultsOptions,
   AureliaRouteComponent,
   AureliaRouteConfig,
-} from './types.js';
+} from './types';
 
 /**
  * Per-request scoped defaults keyed by the Web Standard `Request` instance.
@@ -42,19 +42,49 @@ const defaultsByRequest = new WeakMap<Request, unknown>();
  * Canonical alias: `aureliaRenderer` (matching `@hono/react-renderer` mental model).
  */
 export function aureliaDefaults<E extends Env = Env>(
-  defaults: AureliaDefaultsOptions<E>
+  defaults: AureliaDefaultsOptions<E> = {}
 ): MiddlewareHandler<E> {
   return async (c, next) => {
     const existing = defaultsByRequest.get(c.req.raw) as AureliaDefaultsOptions<E> | undefined;
+    const defaultCss =
+      defaults.document?.cssBundle === false
+        ? false
+        : (defaults.document?.cssBundle ?? existing?.document?.cssBundle ?? '/style.css');
+    const defaultJs =
+      defaults.document?.jsBundle === false
+        ? false
+        : (defaults.document?.jsBundle ?? existing?.document?.jsBundle ?? '/client.js');
+
     const merged: AureliaDefaultsOptions<E> = {
       ...existing,
       ...defaults,
       document: {
+        cssBundle: defaultCss,
+        jsBundle: defaultJs,
         ...existing?.document,
         ...defaults.document,
       },
     };
     defaultsByRequest.set(c.req.raw, merged);
+
+    c.setRenderer(async (componentOrContent: unknown, options?: unknown) => {
+      if (
+        typeof componentOrContent === 'function' ||
+        (typeof componentOrContent === 'object' &&
+          componentOrContent !== null &&
+          ('template' in componentOrContent ||
+            (componentOrContent.constructor && CustomElement.isType(componentOrContent.constructor))))
+      ) {
+        const handler = aurelia<E>({
+          component: componentOrContent as AureliaComponent,
+          ...(typeof options === 'object' && options !== null ? options : {}),
+          ...(typeof options === 'string' ? { title: options } : {}),
+        });
+        return handler(c);
+      }
+      return c.html(String(componentOrContent));
+    });
+
     await next();
   };
 }

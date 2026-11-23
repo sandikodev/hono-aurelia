@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'bun:test';
 import { resolve } from 'node:path';
 import { existsSync } from 'node:fs';
-import { buildClient, buildWorker } from '../src/builder.js';
+import { buildClient, buildWorker } from '../src/builder';
 
 describe('@hono/aurelia Fullstack Build Engine', () => {
   const exampleRoot = resolve(import.meta.dir, '../example');

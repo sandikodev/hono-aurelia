@@ -60,7 +60,7 @@ bun add @hono/aurelia aurelia hono
 ```ts
 import { Hono } from 'hono';
 import { createMiddleware } from 'hono/factory';
-import { aurelia, aureliaAction, aureliaDefaults } from '@hono/aurelia';
+import { aurelia, aureliaAction, aureliaRenderer } from '@hono/aurelia';
 import { HomePage } from './pages/home.aux';
 import { PostDetailPage } from './pages/post-detail.aux';
 import { DashboardPage } from './pages/dashboard.aux';
@@ -73,19 +73,17 @@ type AppEnv = {
 
 const app = new Hono<AppEnv>();
 
-// 1. Request-scoped SSR defaults (stored in WeakMap<Request>, zero c.var mutation)
-app.use(
-  '*',
-  aureliaDefaults<AppEnv>({
-    document: {
-      cssBundle: '/public/style.css',
-      jsBundle: '/public/client.js',
-    },
-    streaming: true,
-    dataEndpoint: true, // Opt-in: Accept: application/json returns JSON hydration payload
-    context: (c) => ({ user: c.get('user') }),
-  })
-);
+// 1. Zero-boilerplate renderer middleware:
+// Automatically configures standard conventions (/style.css, /client.js, WeakMap<Request>)
+// and enables idiomatic `c.render(Component)` support.
+app.use('*', aureliaRenderer());
+
+// Optional: pass overrides if you have custom asset paths or options
+// app.use('*', aureliaRenderer({
+//   document: { cssBundle: '/custom.css' },
+//   streaming: true,
+//   context: (c) => ({ user: c.get('user') }),
+// }));
 
 // 2. Composable Hono auth guard (decoupled from view rendering)
 const requireAuth = createMiddleware<AppEnv>(async (c, next) => {
@@ -98,6 +96,9 @@ app.get('/', aurelia(HomePage));
 app.get('/posts/:slug', aurelia(PostDetailPage));
 app.post('/posts/:slug', aureliaAction(PostDetailPage));
 app.get('/dashboard', requireAuth, aurelia(DashboardPage));
+
+// 4. Idiomatic c.render() also works directly:
+app.get('/render-demo', (c) => c.render(HomePage, { title: 'Direct Render' }));
 
 // 4. Explicit strongly-typed route configuration
 app.get(

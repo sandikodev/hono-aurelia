@@ -9,7 +9,7 @@ export {
   aureliaAction,
   aureliaDefaults,
   aureliaRenderer,
-} from './adapter.js';
+} from './adapter';
 
 export {
   buildClient,
@@ -19,7 +19,7 @@ export {
   type ClientBuildOptions,
   type WorkerBuildOptions,
   type BuildOutputStats,
-} from './builder.js';
+} from './builder';
 
 export type {
   AureliaActionHandler,
@@ -34,6 +34,6 @@ export type {
   ComponentProps,
   DocumentOptions,
   SerializeOptions,
-} from './types.js';
+} from './types';
 
 export const VERSION = '1.0.0-alpha.1';

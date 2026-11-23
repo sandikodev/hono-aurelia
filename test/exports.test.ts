@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'bun:test';
-import * as Root from '../src/index.js';
-import * as Server from '../src/server.js';
-import * as Client from '../src/client.js';
+import * as Root from '../src/index';
+import * as Server from '../src/server';
+import * as Client from '../src/client';
 
 describe('@hono/aurelia exports contract', () => {
   it('exposes pure thin Hono adapter primitives at root (.)', () => {

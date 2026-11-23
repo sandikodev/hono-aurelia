@@ -2,7 +2,7 @@ import { describe, it, expect } from 'bun:test';
 import { Hono } from 'hono';
 import { CustomElement } from 'aurelia';
 import { DEFAULT_SCRIPT_ID, resolveRequestContext } from '@aureliajs/ssr';
-import { aurelia, aureliaAction, aureliaDefaults } from '../src/adapter.js';
+import { aurelia, aureliaAction, aureliaDefaults, aureliaRenderer } from '../src/adapter';
 
 const SimplePage = CustomElement.define(
   {
@@ -216,6 +216,25 @@ describe('@hono/aurelia adapter', () => {
       const resB = await appB.request('/', { headers: { Accept: 'application/json' } });
       expect(resB.headers.get('content-type')).toContain('text/html');
       expect(await resB.text()).not.toContain('/a.css');
+    });
+
+    it('supports zero-config aureliaDefaults() and enables c.render()', async () => {
+      const app = new Hono();
+      app.use('*', aureliaRenderer()); // Zero-config convention!
+      app.get('/page', aurelia(SimplePage));
+      app.get('/render', (c) => c.render(SimplePage, { title: 'Rendered Title' }));
+
+      const resPage = await app.request('/page');
+      expect(resPage.status).toBe(200);
+      const htmlPage = await resPage.text();
+      expect(htmlPage).toContain('<link rel="stylesheet" href="/style.css" />');
+      expect(htmlPage).toContain('<script type="module" src="/client.js"></script>');
+
+      const resRender = await app.request('/render');
+      expect(resRender.status).toBe(200);
+      const htmlRender = await resRender.text();
+      expect(htmlRender).toContain('<title>Rendered Title</title>');
+      expect(htmlRender).toContain('Hello Aurelia');
     });
   });
 
