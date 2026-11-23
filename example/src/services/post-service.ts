@@ -10,6 +10,8 @@
 import { initialPosts, type Post, type Comment } from '../data';
 
 export class PostService {
+  constructor(private readonly db?: any) {}
+
   /**
    * Fetch all posts.
    * On server (SSR): reads directly from repository (0 network overhead).
@@ -17,6 +19,18 @@ export class PostService {
    */
   async getPosts(): Promise<Post[]> {
     if (typeof window === 'undefined') {
+      if (this.db) {
+        try {
+          const { results } = await this.db.prepare('SELECT * FROM posts ORDER BY id ASC').all();
+          if (results && results.length > 0) {
+            return results.map((r: any) => ({
+              ...r,
+              readTime: r.read_time ?? r.readTime,
+              comments: [],
+            }));
+          }
+        } catch {}
+      }
       return initialPosts;
     }
     const res = await fetch('/api/posts', {
@@ -30,6 +44,21 @@ export class PostService {
    * Retrieve single post by slug.
    */
   async getBySlug(slug: string): Promise<Post | null> {
+    if (typeof window === 'undefined' && this.db) {
+      try {
+        const post = await this.db.prepare('SELECT * FROM posts WHERE slug = ?').bind(slug).first();
+        if (!post) return null;
+        const { results: comments } = await this.db
+          .prepare('SELECT * FROM comments WHERE post_slug = ? ORDER BY id ASC')
+          .bind(slug)
+          .all();
+        return {
+          ...post,
+          readTime: post.read_time ?? post.readTime,
+          comments: comments ?? [],
+        };
+      } catch {}
+    }
     const found = initialPosts.find((p) => p.slug === slug);
     return found ?? null;
   }
@@ -38,6 +67,18 @@ export class PostService {
    * Server-side action: increment claps directly in the data store.
    */
   async clap(slug: string): Promise<Post | null> {
+    if (this.db) {
+      try {
+        await this.db.prepare('UPDATE posts SET claps = claps + 1 WHERE slug = ?').bind(slug).run();
+        const post = await this.db.prepare('SELECT * FROM posts WHERE slug = ?').bind(slug).first();
+        if (!post) return null;
+        return {
+          ...post,
+          readTime: post.read_time ?? post.readTime,
+          comments: [],
+        };
+      } catch {}
+    }
     const post = initialPosts.find((p) => p.slug === slug);
     if (!post) return null;
     post.claps += 1;
@@ -48,15 +89,32 @@ export class PostService {
    * Server-side action: append new comment.
    */
   async addComment(slug: string, author: string, text: string): Promise<Comment | null> {
-    const post = initialPosts.find((p) => p.slug === slug);
-    if (!post) return null;
-
+    const trimmedAuthor = author.trim() || 'Anonymous Engineer';
+    const trimmedText = text.trim();
     const comment: Comment = {
       id: Date.now(),
-      author: author.trim() || 'Anonymous Engineer',
-      text: text.trim(),
+      author: trimmedAuthor,
+      text: trimmedText,
       date: 'Just now',
     };
+
+    if (this.db) {
+      try {
+        const post = await this.db
+          .prepare('SELECT id FROM posts WHERE slug = ?')
+          .bind(slug)
+          .first();
+        if (!post) return null;
+        await this.db
+          .prepare('INSERT INTO comments (post_slug, author, text, date) VALUES (?, ?, ?, ?)')
+          .bind(slug, comment.author, comment.text, comment.date)
+          .run();
+        return comment;
+      } catch {}
+    }
+
+    const post = initialPosts.find((p) => p.slug === slug);
+    if (!post) return null;
     post.comments.push(comment);
     return comment;
   }
@@ -77,11 +135,7 @@ export class PostService {
   /**
    * Client-side RPC: trigger `comment` server action on Hono route.
    */
-  async addCommentRemote(
-    slug: string,
-    author: string,
-    text: string
-  ): Promise<Comment | null> {
+  async addCommentRemote(slug: string, author: string, text: string): Promise<Comment | null> {
     const res = await fetch(`/posts/${slug}?_action=comment`, {
       method: 'POST',
       headers: {

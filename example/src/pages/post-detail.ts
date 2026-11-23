@@ -12,21 +12,21 @@ export class PostDetailPage implements ICustomElementViewModel {
   public static readonly status = ({ post }: { post?: Post | null }) => (post ? 200 : 404);
 
   public static async loader(c: Context) {
-    const postService = new PostService();
+    const postService = new PostService((c as any).env?.DB);
     const slug = c.req.param('slug') ?? '';
     return { post: await postService.getBySlug(slug) };
   }
 
   public static readonly actions = {
     like: async (c: Context) => {
-      const postService = new PostService();
+      const postService = new PostService((c as any).env?.DB);
       const slug = c.req.param('slug') ?? '';
       const updated = await postService.clap(slug);
       if (!updated) return c.json({ error: 'Post not found' }, 404);
       return { success: true, claps: updated.claps };
     },
     comment: async (c: Context) => {
-      const postService = new PostService();
+      const postService = new PostService((c as any).env?.DB);
       const slug = c.req.param('slug') ?? '';
       const body = await c.req.json().catch(() => ({}));
       const text = typeof body.text === 'string' ? body.text.trim() : '';
@@ -83,7 +83,7 @@ export class PostDetailPage implements ICustomElementViewModel {
       const comment: Comment | null = await this.postService.addCommentRemote(
         this.post.slug,
         author,
-        text
+        text,
       );
       if (comment) {
         this.post.comments.push(comment);

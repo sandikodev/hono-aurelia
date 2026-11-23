@@ -14,7 +14,6 @@ import { Hono } from 'hono';
 import { createMiddleware } from 'hono/factory';
 import { aurelia, aureliaAction, aureliaRenderer } from '@hono/aurelia';
 import { staticAssets } from './static';
-import { initialPosts, dashboardStats, activityStream } from './data';
 
 // Clean Canonical Aurelia 2 Page Components
 import { HomePage } from './pages/home';
@@ -22,6 +21,9 @@ import { PostDetailPage } from './pages/post-detail';
 import { DashboardPage } from './pages/dashboard';
 
 export type AppEnv = {
+  Bindings: {
+    DB?: any;
+  };
   Variables: {
     user: { id: string; email: string; name: string } | null;
     role: string | null;
@@ -82,10 +84,14 @@ app.post('/posts/:slug', aureliaAction(PostDetailPage));
 app.get('/dashboard', requireAuth, aurelia(DashboardPage));
 
 // Standard JSON API Endpoints
-app.get('/api/posts', (c) => c.json(initialPosts));
-app.get('/api/dashboard/stats', requireAuth, (c) =>
-  c.json({ stats: dashboardStats, activity: activityStream })
-);
+app.get('/api/posts', async (c) => {
+  const postService = new (await import('./services/post-service')).PostService(c.env?.DB);
+  return c.json(await postService.getPosts());
+});
+app.get('/api/dashboard/stats', requireAuth, async (c) => {
+  const dashboardService = new (await import('./services/dashboard-service')).DashboardService(c.env?.DB);
+  return c.json(await dashboardService.getMetrics());
+});
 app.get('/health', (c) => c.json({ status: 'ok', timestamp: new Date().toISOString() }));
 
 const port = parseInt(process.env.PORT || '3000', 10);

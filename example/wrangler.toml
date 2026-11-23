@@ -10,5 +10,10 @@ binding = "ASSETS"
 [vars]
 WORKER = "true"
 
+[[d1_databases]]
+binding = "DB"
+database_name = "aurelia-ssr-db"
+database_id = "e6e31e36-4273-404e-a790-ae68083c5699"
+
 [build]
 command = "bun run build && bun run build:worker"

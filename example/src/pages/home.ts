@@ -7,8 +7,8 @@ import type { Post } from '../data';
 export class HomePage implements ICustomElementViewModel {
   public static readonly title = 'Hono + Aurelia 2 SSR - Engineering Blog';
 
-  public static async loader() {
-    const postService = new PostService();
+  public static async loader(c?: any) {
+    const postService = new PostService(c?.env?.DB);
     return { posts: await postService.getPosts() };
   }
 

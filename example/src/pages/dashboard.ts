@@ -2,16 +2,18 @@ import { customElement, resolve, type ICustomElementViewModel } from 'aurelia';
 import type { Context } from 'hono';
 import template from './dashboard.html';
 import { DashboardService } from '../services/dashboard-service';
-import { dashboardStats, activityStream, type DashboardStats, type ActivityItem } from '../data';
+import type { DashboardStats, ActivityItem } from '../data';
 
 @customElement({ name: 'dashboard-page', template })
 export class DashboardPage implements ICustomElementViewModel {
   public static readonly title = 'Telemetry Dashboard - Aurelia 2 SSR';
 
   public static async loader(c: Context) {
+    const dashboardService = new DashboardService(c.env?.DB);
+    const data = await dashboardService.getMetrics();
     return {
-      stats: dashboardStats,
-      activity: activityStream,
+      stats: data.stats,
+      activity: data.activity,
       user: c.get('user') ?? null,
       role: c.get('role') ?? null,
     };
