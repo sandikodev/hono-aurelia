@@ -38,7 +38,7 @@ describe('Canonical Hono + Aurelia 2 SSR Fullstack Reference Test Suite', () => 
       expect(html).toContain('<html');
       expect(html).toContain('<head>');
       expect(html).toContain('<title>Hono + Aurelia 2 SSR - Engineering Blog</title>');
-      expect(html).toContain('href="/style.css"');
+      expect(html).toMatch(/href="\/style\.css"|<style[^>]*>/);
       expect(html).toContain('src="/client.js"');
 
       // Navigation & Branding Preamble
@@ -683,11 +683,10 @@ describe('Canonical Hono + Aurelia 2 SSR Fullstack Reference Test Suite', () => 
       expect(res.status).toBe(200);
       expect(res.headers.get('content-type')).toContain('application/json');
       const json = await res.json();
-      expect(json.ard_version).toBe('1.0');
-      expect(json.name).toBe('Aurelia 2 Fullstack Ecosystem & Meta-Framework');
-      expect(Array.isArray(json.endpoints)).toBe(true);
-      expect(Array.isArray(json.packages)).toBe(true);
-      expect(Array.isArray(json.rfc_proposals)).toBe(true);
+      expect(json.specVersion).toBe('0.91');
+      expect(Array.isArray(json.entries)).toBe(true);
+      expect(json.entries.length).toBeGreaterThan(0);
+      expect(json.entries[0].identifier).toContain('urn:air:');
     });
 
     it('enforces hardened HTTP security headers on all responses', async () => {

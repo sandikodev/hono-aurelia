@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "bun run build:client && bun --watch src/index.ts",
-    "build:client": "bun build src/client.ts --outdir public --loader .html:text --minify",
+    "build:client": "bun build src/client.ts --outdir public --loader .html:text --minify --splitting --target browser",
     "build:worker": "bun -e \"import { buildWorker } from '@hono/aurelia/build'; await buildWorker()\"",
     "build": "bun run build:client && tsc --noEmit",
     "deploy:worker": "wrangler deploy",
