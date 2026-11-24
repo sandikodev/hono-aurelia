@@ -1,0 +1,127 @@
+# Aurelia 2 Fullstack Ecosystem & Meta-Framework Specification
+
+> The Canonical Reference Specification, Open-Source Architecture, and Community RFC Suite for Aurelia 2, Hono, and Edge Cloud Computing. Maintained by Sandiko Dev ([@sandikodev](https://github.com/sandikodev)).
+
+## 🕊️ Philosophy: Convention-over-Configuration (CoC) in the AI / LLM Era
+
+### The Antidote to LLM Hallucination & Codebase Entropy
+In the modern software landscape, Large Language Models (LLMs) and autonomous AI coding agents generate substantial amounts of code. When web frameworks lack strict architectural conventions and instead rely on fragmented ad-hoc glue code (competing state libraries, arbitrary hooks, custom build wrappers), the search space for LLMs expands uncontrollably. The model hallucinates, introducing divergent paradigms, bloated third-party dependencies (`clsx`, `cva`, `zustand`), and fragile glue code.
+
+**Convention-over-Configuration (CoC) is fundamentally aligned with Large Language Models.** Deterministic conventions—such as Aurelia 2's clean ViewModel + View separation, standard TC39 decorators, native `@resolve()` Dependency Injection, and Hono's minimalist route adapters—constrain the AI generation space. The model produces predictable, clean, and unbloated code because the conventions guide it with mathematical certainty.
+
+### The Engineer as an Architectural Steward
+Software engineering is not merely typing syntax; it is exercising architectural wisdom:
+1. **Clean Code & Native Purity**: Respect the browser and machine by eliminating unnecessary Virtual DOM overhead and wrapper layers.
+2. **Reproducible Environments**: Structure toolchains so that human contributors and AI agents can build, test, and verify with zero friction.
+3. **Living Documentation**: Maintain accurate, machine-readable specifications (`llms.txt`, `ard.json`, RFCs) that reflect true system reality.
+4. **Community Ethics & Sustainability**: Build digital technology as a shared fabric of interconnectedness and harmony, transcending individual ego or dogmatic gatekeeping.
+
+### The Mutual Alignment: Hono & Aurelia 2
+Hono and Aurelia 2 share a common design soul: **radical simplicity and native Web Standards purity**.
+- **Hono** provides the lightest, standard-compliant edge envelope (Cloudflare `workerd`, Bun, Node, Deno) based on standard Web `Fetch`, `Request`, `Response`, and `Web Streams`.
+- **Aurelia 2** provides direct-DOM rendering with zero Virtual-DOM overhead, enterprise-grade Dependency Injection, and sub-millisecond LinkeDOM SSR streaming.
+- Together, they form an unbroken Web Standards continuum with zero glue code.
+
+---
+
+## 🏛️ Monorepo Package Directory & Roles
+
+### Upstream Open-Source Packages (`packages/`)
+
+- [packages/hono-aurelia](https://github.com/sandikodev/aureliajs/tree/main/packages/hono-aurelia): The official Hono meta-framework adapter for Aurelia 2.
+  - `@hono/aurelia`: Pure HTTP route adapters `aurelia(Component)` and `aureliaAction(Component)`.
+  - `@hono/aurelia/client`: Zero-server-leak client hydration utilities (`createClientHydrator`).
+  - `@hono/aurelia/server`: Server-side execution primitives.
+  - `@hono/aurelia/build`: Automated bundler for Cloudflare Workers and Bun.
+- [packages/aurelia-ssr](https://github.com/sandikodev/aureliajs/tree/main/packages/aurelia-ssr): Core LinkeDOM SSR Engine & Web Streams Assembler.
+  - Sub-millisecond real-DOM server rendering (`renderAurelia`).
+  - Streaming HTML document generator (`createDocumentShell`).
+  - Safe, XSS-escaped state serialization (`serializeState`, `createHydrationScript`).
+- [packages/aurelia-islands](https://github.com/sandikodev/aureliajs/tree/main/packages/aurelia-islands): Islands Architecture runtime for partial, progressive, zero-JS hydration.
+- [packages/aurelia-bridge](https://github.com/sandikodev/aureliajs/tree/main/packages/aurelia-bridge): Polyglot component interop for embedding foreign components (React, Vue) within Aurelia 2.
+- [packages/vite-plugin-aux](https://github.com/sandikodev/aureliajs/tree/main/packages/vite-plugin-aux): Compiler & bundler plugins for `.aux` Single-File Components supporting Vite, Bun, and esbuild.
+- [packages/ssr-playground](https://github.com/sandikodev/aureliajs/tree/main/packages/ssr-playground): Interactive developer workbench featuring 16 live architectural pattern test suites.
+
+### End-User SaaS Applications (`apps/`)
+
+- [apps/web](https://github.com/sandikodev/aureliajs/tree/main/apps/web): Multi-tenant enterprise SaaS admin application built with Aurelia 2, Tailwind CSS v4, and `.aux` SFCs.
+- [apps/api](https://github.com/sandikodev/aureliajs/tree/main/apps/api): Enterprise REST backend built with Hono, Drizzle ORM, Argon2id auth, and Neon PostgreSQL.
+- [apps/shared](https://github.com/sandikodev/aureliajs/tree/main/apps/shared): Domain contracts, Zod validation schemas, and shared TypeScript types.
+
+---
+
+## 📐 Canonical Conventions for LLMs & AI Coding Agents
+
+When generating or editing Aurelia 2 and Hono code in this ecosystem, adhere strictly to these conventions:
+
+### 1. Component Authoring (Convention-over-Configuration)
+```typescript
+import { customElement, resolve, type ICustomElementViewModel } from 'aurelia';
+import template from './my-component.html';
+import { ProjectService } from '../services/project-service';
+
+@customElement({ name: 'my-component', template })
+export class MyComponent implements ICustomElementViewModel {
+  // Inject dependencies via resolve() — no constructor boilerplate or React context
+  private readonly projectService = resolve(ProjectService);
+
+  // Observable reactive properties — no useState, no signals wrappers, no setters
+  public projects = [];
+  public loading = false;
+
+  public async binding(): Promise<void> {
+    this.loading = true;
+    this.projects = await this.projectService.listProjects();
+    this.loading = false;
+  }
+}
+```
+
+### 2. Declarative Template Syntax (W3C Web Standards)
+- **Text interpolation**: `<span>${user.name}</span>`
+- **Attribute / Property binding**: `<button disabled.bind="loading">`
+- **Event binding**: `<button click.trigger="save()">`
+- **Loops & Collections**: `<div repeat.for="item of items">`
+- **Conditionals**: `<div if.bind="isReady">`
+
+### 3. Server Route & Action Composition (Hono + Aurelia 2)
+```typescript
+import { Hono } from 'hono';
+import { aurelia, aureliaAction, aureliaRenderer } from '@hono/aurelia';
+import { HomePage } from './pages/home';
+
+const app = new Hono();
+app.use('*', aureliaRenderer());
+
+// Clean 1-liner route and action adapters
+app.get('/', aurelia(HomePage));
+app.post('/', aureliaAction(HomePage));
+```
+
+---
+
+## 📜 Community RFCs & Architectural Manifestos
+
+These proposals are open for community review, debate, and upstream collaboration:
+
+- [RFC Master: Native Purity Initiative](https://github.com/sandikodev/aureliajs/blob/main/.github/issues/00-master-native-purity-initiative.md): Elimination of unnecessary build-time wrappers, migration to native platform APIs.
+- [RFC 001: LinkeDOM Edge SSR Migration](https://github.com/sandikodev/aureliajs/blob/main/.github/issues/03-rfc-migrate-ssr-dom-from-jsdom-to-linkedom.md): Upgrading SSR execution from heavyweight JSDOM to lightweight, edge-native LinkeDOM.
+- [RFC 002: Elimination of React CSS Utilities](https://github.com/sandikodev/aureliajs/blob/main/.github/issues/02-rfc-eliminate-react-css-utilities-in-web.md): Purging `cva`, `clsx`, and `tailwind-merge` in favor of native Aurelia template expressions.
+- [Manifesto: Aurelia 2 + Hono Master Architectural Manifesto](https://github.com/sandikodev/aureliajs/blob/main/docs/AURELIA_HONO_MASTER_MANIFESTO.md): The architectural blueprint uniting Direct-DOM, Dependency Injection, and modern Single-File Components.
+- [Essay: The Angular-Aurelia Heritage](https://github.com/sandikodev/aureliajs/blob/main/docs/essays/the-angular-aurelia-heritage.md): Deep-dive into frontend mental models, Rob Eisenberg's TC39 work, and Direct-DOM evolution.
+- [Essay: The Resumable Frontier](https://github.com/sandikodev/aureliajs/blob/main/docs/essays/the-resumable-frontier.md): Investigating Qwik-style resumability on top of Aurelia's Direct-DOM foundation.
+
+---
+
+## 🌐 Public Deployments & Machine-Readable Manifests
+
+- **Production SaaS Platform (Vercel)**: [https://aureliajs.vercel.app](https://aureliajs.vercel.app)
+  - Agent Discovery Manifest: [https://aureliajs.vercel.app/.well-known/ard.json](https://aureliajs.vercel.app/.well-known/ard.json)
+  - LLM System Document: [https://aureliajs.vercel.app/llms.txt](https://aureliajs.vercel.app/llms.txt)
+  - Public Health Endpoint: [https://aureliajs.vercel.app/api/health](https://aureliajs.vercel.app/api/health)
+- **Edge SSR Reference Application (Cloudflare Workers)**: [https://aurelia-hono-ssr.sandiko.workers.dev](https://aurelia-hono-ssr.sandiko.workers.dev)
+  - Agent Discovery Manifest: [https://aurelia-hono-ssr.sandiko.workers.dev/.well-known/ard.json](https://aurelia-hono-ssr.sandiko.workers.dev/.well-known/ard.json)
+  - LLM System Document: [https://aurelia-hono-ssr.sandiko.workers.dev/llms.txt](https://aurelia-hono-ssr.sandiko.workers.dev/llms.txt)
+  - Telemetry Dashboard: [https://aurelia-hono-ssr.sandiko.workers.dev/dashboard](https://aurelia-hono-ssr.sandiko.workers.dev/dashboard)
+  - REST Posts API: [https://aurelia-hono-ssr.sandiko.workers.dev/api/posts](https://aurelia-hono-ssr.sandiko.workers.dev/api/posts)
+- **Monorepo Source Code**: [https://github.com/sandikodev/aureliajs](https://github.com/sandikodev/aureliajs)

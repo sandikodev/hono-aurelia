@@ -3,9 +3,9 @@
     <div class="nav-container">
       <div class="brand">
         <a href="/" class="brand-link">
-          <svg class="brand-logo" width="24" height="24" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <circle cx="50" cy="50" r="46" stroke="#ed2578" stroke-width="8"/>
-            <circle cx="50" cy="50" r="24" fill="#ed2578"/>
+          <svg class="brand-logo" width="24" height="24" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+            <circle cx="50" cy="50" r="46" stroke="#c81b66" stroke-width="8"/>
+            <circle cx="50" cy="50" r="24" fill="#c81b66"/>
           </svg>
           <span class="brand-title">Aurelia <span class="brand-accent">2</span></span>
           <span class="brand-divider">/</span>
@@ -18,7 +18,7 @@
       </div>
       <div class="nav-links">
         <a href="/" class="nav-item is-active">Overview</a>
-        <a href="/dashboard?token=demo-token" class="nav-item">Telemetry</a>
+        <a href="/dashboard" class="nav-item">Telemetry</a>
         <a href="/api/posts" target="_blank" class="nav-item">API (JSON)</a>
       </div>
     </div>
@@ -40,7 +40,7 @@
         <a href="#articles" class="btn btn-primary">
           Explore Articles ↓
         </a>
-        <a href="/dashboard?token=demo-token" class="btn btn-outline">
+        <a href="/dashboard" class="btn btn-outline">
           Telemetry Dashboard ⚡
         </a>
         <a href="/api/posts" target="_blank" class="btn btn-outline" style="border-style: dashed;">
@@ -74,7 +74,7 @@
         <h2 class="section-title">Featured Engineering Articles</h2>
         <span class="section-badge">${posts.length} Publications</span>
       </div>
-      <button click.trigger="refresh()" class="btn btn-outline" disabled.bind="loading">
+      <button click.trigger="refresh()" class="btn btn-outline" disabled.bind="loading" aria-label="Refresh publications list">
         <span if.bind="!loading">🔄</span>
         <span if.bind="loading">⏳</span>
         ${loading ? 'Refreshing State...' : 'Refresh Data'}
@@ -169,7 +169,7 @@
       </div>
 
       <div style="text-align: center; margin-top: 1.5rem;">
-        <a href="https://github.com/sandikodev/hono-aurelia" target="_blank" class="btn btn-primary">
+        <a href="https://github.com/sandikodev/hono-aurelia" target="_blank" rel="noopener noreferrer" class="btn btn-primary">
           Explore Architecture &amp; Reverse Engineering Spec →
         </a>
       </div>

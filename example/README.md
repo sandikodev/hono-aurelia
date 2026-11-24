@@ -19,7 +19,7 @@ Wrangler:
 
 It was redeployed on **23 November 2026** from this directory. Re-verified the
 same day: `GET /` and `GET /health` both returned **200**. The authenticated
-JSON endpoint (`/api/dashboard/stats?token=demo-token`) and the 401 guard were
+JSON endpoint (`/api/dashboard/stats?token=$TELEMETRY_TOKEN`) and the 401 guard were
 also checked. See [Deployment](#deployment) for the exact commands.
 
 ## Quick Start
@@ -73,19 +73,21 @@ The older `window.__HYDRATION__` global is **not** used; the payload is an HTML5
 
 ## How Auth Works
 
-A Hono middleware resolves the demo user from either the `token` query parameter
-or an `Authorization: Bearer …` header. `demo-token` is the only accepted value.
+A Hono middleware resolves the operator from either the `token` query parameter
+or an `Authorization: Bearer …` header. The accepted value is the Worker secret
+`TELEMETRY_TOKEN` (set with `wrangler secret put TELEMETRY_TOKEN`, or as a local
+`.dev.vars` value). If it is not configured, every telemetry request is 401.
 
 ```bash
 # Without auth -> 401
 curl http://localhost:3000/api/dashboard/stats
 
 # With auth -> 200
-curl 'http://localhost:3000/api/dashboard/stats?token=demo-token'
-curl -H 'Authorization: Bearer demo-token' http://localhost:3000/api/dashboard/stats
+curl "http://localhost:3000/api/dashboard/stats?token=$TELEMETRY_TOKEN"
+curl -H "Authorization: Bearer $TELEMETRY_TOKEN" http://localhost:3000/api/dashboard/stats
 ```
 
-This is intentionally a demo guard, not a real session system — see the
+This is intentionally a minimal guard, not a real session system — see the
 production API in `apps/api` for cookie-based sessions.
 
 ## Development
@@ -158,7 +160,7 @@ Verify the live deployment:
 ```bash
 curl https://aurelia-hono-ssr.sandiko.workers.dev/health
 curl https://aurelia-hono-ssr.sandiko.workers.dev/
-curl 'https://aurelia-hono-ssr.sandiko.workers.dev/api/dashboard/stats?token=demo-token'
+curl "https://aurelia-hono-ssr.sandiko.workers.dev/api/dashboard/stats?token=$TELEMETRY_TOKEN"
 curl 'https://aurelia-hono-ssr.sandiko.workers.dev/api/dashboard/stats' # 401
 ```
 
@@ -196,7 +198,7 @@ curl http://localhost:3000/health
 curl http://localhost:3000/
 curl http://localhost:3000/posts/hono-aurelia-architecture
 curl http://localhost:3000/api/dashboard/stats                    # 401
-curl 'http://localhost:3000/api/dashboard/stats?token=demo-token' # 200
+curl 'http://localhost:3000/api/dashboard/stats?token=$TELEMETRY_TOKEN' # 200
 
 # Confirm the SSR payload script is present in the HTML
 curl http://localhost:3000/ | grep '__AURELIA_SSR_DATA__'

@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS telemetry_stats (
   engagement INTEGER NOT NULL DEFAULT 0
 );
 
-CREATE TABLE IF NOT EXISTS activity_stream (
+CREATE TABLE IF NOT EXISTS telemetry_activity (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   type TEXT NOT NULL,
   action TEXT NOT NULL,

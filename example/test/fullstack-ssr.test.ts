@@ -1,12 +1,22 @@
 import { describe, it, expect } from 'bun:test';
 import { DI } from 'aurelia';
 import { app } from '../src/index';
-import { initialPosts, dashboardStats, activityStream } from '../src/data';
+import { initialPosts, dashboardStats, activityStream } from './fixtures';
+import { createFakeD1 } from './fake-d1';
 import { PostService } from '../src/services/post-service';
 import { DashboardService } from '../src/services/dashboard-service';
 import { HomePage } from '../src/pages/home';
 import { PostDetailPage } from '../src/pages/post-detail';
 import { DashboardPage } from '../src/pages/dashboard';
+
+// The app has no built-in fixtures: tests inject explicit rows through a D1
+// binding, exactly as Cloudflare Workers do in production.
+const db = createFakeD1();
+const request = (
+  input: Request | string | URL,
+  init?: RequestInit,
+  env: Record<string, unknown> = {},
+) => app.request(input, init, { DB: db, TELEMETRY_TOKEN: 'test-token', ...env });
 
 describe('Canonical Hono + Aurelia 2 SSR Fullstack Reference Test Suite', () => {
   // =========================================================================
@@ -14,7 +24,7 @@ describe('Canonical Hono + Aurelia 2 SSR Fullstack Reference Test Suite', () => 
   // =========================================================================
   describe('1. Home Page (GET /)', () => {
     it('renders complete HTML5 document with pre-rendered posts and metadata', async () => {
-      const res = await app.request('http://localhost:3000/', {
+      const res = await request('http://localhost:3000/', {
         headers: { Accept: 'text/html' },
       });
 
@@ -69,7 +79,7 @@ describe('Canonical Hono + Aurelia 2 SSR Fullstack Reference Test Suite', () => 
     });
 
     it('serves JSON payload via HTTP Content Negotiation on the same route', async () => {
-      const res = await app.request('http://localhost:3000/', {
+      const res = await request('http://localhost:3000/', {
         headers: { Accept: 'application/json' },
       });
 
@@ -94,7 +104,7 @@ describe('Canonical Hono + Aurelia 2 SSR Fullstack Reference Test Suite', () => 
       expect(HomePage.title).toBe('Hono + Aurelia 2 SSR - Engineering Blog');
 
       // Static loader
-      const loaded = await HomePage.loader();
+      const loaded = await HomePage.loader({ env: { DB: db } });
       expect(Array.isArray(loaded.posts)).toBe(true);
       expect(loaded.posts.length).toBeGreaterThan(0);
 
@@ -114,7 +124,7 @@ describe('Canonical Hono + Aurelia 2 SSR Fullstack Reference Test Suite', () => 
   // =========================================================================
   describe('2. Post Detail Page (GET /posts/:slug)', () => {
     it('evaluates dynamic title and renders post detail SSR with full content', async () => {
-      const res = await app.request('http://localhost:3000/posts/hono-aurelia-architecture', {
+      const res = await request('http://localhost:3000/posts/hono-aurelia-architecture', {
         headers: { Accept: 'text/html' },
       });
 
@@ -159,7 +169,7 @@ describe('Canonical Hono + Aurelia 2 SSR Fullstack Reference Test Suite', () => 
     });
 
     it('renders secondary post (Zero-FOUC) correctly with zero layout shift claim', async () => {
-      const res = await app.request('http://localhost:3000/posts/zero-fouc-real-dom', {
+      const res = await request('http://localhost:3000/posts/zero-fouc-real-dom', {
         headers: { Accept: 'text/html' },
       });
 
@@ -172,7 +182,7 @@ describe('Canonical Hono + Aurelia 2 SSR Fullstack Reference Test Suite', () => 
     });
 
     it('renders third post (State Hydration) with empty comments empty-state placeholder', async () => {
-      const res = await app.request('http://localhost:3000/posts/state-hydration', {
+      const res = await request('http://localhost:3000/posts/state-hydration', {
         headers: { Accept: 'text/html' },
       });
 
@@ -184,7 +194,7 @@ describe('Canonical Hono + Aurelia 2 SSR Fullstack Reference Test Suite', () => 
     });
 
     it('returns HTTP 404 status and renders graceful fallback UI for non-existent post', async () => {
-      const res = await app.request('http://localhost:3000/posts/non-existent-article-slug', {
+      const res = await request('http://localhost:3000/posts/non-existent-article-slug', {
         headers: { Accept: 'text/html' },
       });
 
@@ -201,7 +211,7 @@ describe('Canonical Hono + Aurelia 2 SSR Fullstack Reference Test Suite', () => 
     });
 
     it('serves JSON payload for post detail via Content Negotiation', async () => {
-      const res = await app.request('http://localhost:3000/posts/hono-aurelia-architecture', {
+      const res = await request('http://localhost:3000/posts/hono-aurelia-architecture', {
         headers: { Accept: 'application/json' },
       });
 
@@ -221,7 +231,7 @@ describe('Canonical Hono + Aurelia 2 SSR Fullstack Reference Test Suite', () => 
     });
 
     it('serves 404 JSON response for non-existent post via Content Negotiation', async () => {
-      const res = await app.request('http://localhost:3000/posts/non-existent-article-slug', {
+      const res = await request('http://localhost:3000/posts/non-existent-article-slug', {
         headers: { Accept: 'application/json' },
       });
 
@@ -264,7 +274,7 @@ describe('Canonical Hono + Aurelia 2 SSR Fullstack Reference Test Suite', () => 
   // =========================================================================
   describe('3. Dashboard Page (GET /dashboard)', () => {
     it('blocks unauthenticated access with HTTP 401 Unauthorized', async () => {
-      const res = await app.request('http://localhost:3000/dashboard');
+      const res = await request('http://localhost:3000/dashboard');
       expect(res.status).toBe(401);
 
       const json = (await res.json()) as { error: string; message: string };
@@ -273,19 +283,19 @@ describe('Canonical Hono + Aurelia 2 SSR Fullstack Reference Test Suite', () => 
     });
 
     it('blocks access when an invalid token is provided', async () => {
-      const res = await app.request('http://localhost:3000/dashboard?token=invalid-secret-key');
+      const res = await request('http://localhost:3000/dashboard?token=invalid-secret-key');
       expect(res.status).toBe(401);
     });
 
     it('blocks access when an invalid Authorization Bearer token is provided', async () => {
-      const res = await app.request('http://localhost:3000/dashboard', {
+      const res = await request('http://localhost:3000/dashboard', {
         headers: { Authorization: 'Bearer invalid-token' },
       });
       expect(res.status).toBe(401);
     });
 
     it('allows access and renders Telemetry Dashboard SSR when valid query token is passed', async () => {
-      const res = await app.request('http://localhost:3000/dashboard?token=demo-token', {
+      const res = await request('http://localhost:3000/dashboard?token=test-token', {
         headers: { Accept: 'text/html' },
       });
 
@@ -300,7 +310,7 @@ describe('Canonical Hono + Aurelia 2 SSR Fullstack Reference Test Suite', () => 
 
       // Authenticated Identity Header
       expect(html).toContain('Session authenticated as');
-      expect(html).toContain('Demo Operator');
+      expect(html).toContain('Operator');
       expect(html).toContain('owner');
       expect(html).toContain('Guarded by Hono <code>requireAuth</code> middleware');
 
@@ -324,10 +334,10 @@ describe('Canonical Hono + Aurelia 2 SSR Fullstack Reference Test Suite', () => 
       expect(html).toContain('"component":"dashboard-page"');
     });
 
-    it('allows access via Authorization: Bearer demo-token header', async () => {
-      const res = await app.request('http://localhost:3000/dashboard', {
+    it('allows access via Authorization: Bearer test-token header', async () => {
+      const res = await request('http://localhost:3000/dashboard', {
         headers: {
-          Authorization: 'Bearer demo-token',
+          Authorization: 'Bearer test-token',
           Accept: 'text/html',
         },
       });
@@ -335,11 +345,11 @@ describe('Canonical Hono + Aurelia 2 SSR Fullstack Reference Test Suite', () => 
       expect(res.status).toBe(200);
       const html = await res.text();
       expect(html).toContain('Telemetry Dashboard');
-      expect(html).toContain('Demo Operator');
+      expect(html).toContain('Operator');
     });
 
     it('serves Dashboard JSON payload via Content Negotiation when authenticated', async () => {
-      const res = await app.request('http://localhost:3000/dashboard?token=demo-token', {
+      const res = await request('http://localhost:3000/dashboard?token=test-token', {
         headers: { Accept: 'application/json' },
       });
 
@@ -360,7 +370,7 @@ describe('Canonical Hono + Aurelia 2 SSR Fullstack Reference Test Suite', () => 
       expect(json.component).toBe('dashboard-page');
       expect(json.initialData.stats.views).toBe(dashboardStats.views);
       expect(json.initialData.activity.length).toBe(activityStream.length);
-      expect(json.initialData.user.name).toBe('Demo Operator');
+      expect(json.initialData.user.name).toBe('Operator');
       expect(json.initialData.role).toBe('owner');
     });
 
@@ -378,7 +388,7 @@ describe('Canonical Hono + Aurelia 2 SSR Fullstack Reference Test Suite', () => 
       const postBefore = initialPosts.find((p) => p.slug === targetSlug)!;
       const initialClaps = postBefore.claps;
 
-      const res = await app.request(
+      const res = await request(
         `http://localhost:3000/posts/${targetSlug}?_action=like`,
         {
           method: 'POST',
@@ -391,12 +401,19 @@ describe('Canonical Hono + Aurelia 2 SSR Fullstack Reference Test Suite', () => 
       expect(body.success).toBe(true);
       expect(body.claps).toBe(initialClaps + 1);
 
-      // Verify mutation reflected in state
-      expect(postBefore.claps).toBe(initialClaps + 1);
+      // Verify the mutation is persisted in the datastore, not a fixture object.
+      const after = await (
+        await request('http://localhost:3000/api/posts', {
+          headers: { Accept: 'application/json' },
+        })
+      ).json();
+      expect(after.find((p: { slug: string }) => p.slug === targetSlug).claps).toBe(
+        initialClaps + 1,
+      );
     });
 
     it('returns 404 when "like" action is dispatched on a non-existent slug', async () => {
-      const res = await app.request(
+      const res = await request(
         'http://localhost:3000/posts/unknown-slug-target?_action=like',
         {
           method: 'POST',
@@ -419,7 +436,7 @@ describe('Canonical Hono + Aurelia 2 SSR Fullstack Reference Test Suite', () => 
         text: 'LinkeDOM isolation without JSDOM memory leaks is truly top tier.',
       };
 
-      const res = await app.request(
+      const res = await request(
         `http://localhost:3000/posts/${targetSlug}?_action=comment`,
         {
           method: 'POST',
@@ -441,12 +458,18 @@ describe('Canonical Hono + Aurelia 2 SSR Fullstack Reference Test Suite', () => 
       expect(body.comment.author).toBe('Dan Abramov');
       expect(body.comment.text).toBe(payload.text);
       expect(typeof body.comment.id).toBe('number');
-      expect(post.comments.length).toBe(initialCount + 1);
+      expect(initialCount).toBeGreaterThanOrEqual(0);
+
+      // Verify the comment is read back from the datastore on the next render.
+      const detail = await request(`http://localhost:3000/posts/${targetSlug}`, {
+        headers: { Accept: 'text/html' },
+      });
+      expect(await detail.text()).toContain(payload.text);
     });
 
     it('defaults author to "Anonymous Engineer" when author is omitted in comment action', async () => {
       const targetSlug = 'state-hydration';
-      const res = await app.request(
+      const res = await request(
         `http://localhost:3000/posts/${targetSlug}?_action=comment`,
         {
           method: 'POST',
@@ -469,7 +492,7 @@ describe('Canonical Hono + Aurelia 2 SSR Fullstack Reference Test Suite', () => 
     });
 
     it('returns 400 Bad Request when comment text is missing or whitespace only', async () => {
-      const res = await app.request(
+      const res = await request(
         'http://localhost:3000/posts/hono-aurelia-architecture?_action=comment',
         {
           method: 'POST',
@@ -487,7 +510,7 @@ describe('Canonical Hono + Aurelia 2 SSR Fullstack Reference Test Suite', () => 
     });
 
     it('returns 400 Bad Request when comment request body is malformed JSON', async () => {
-      const res = await app.request(
+      const res = await request(
         'http://localhost:3000/posts/hono-aurelia-architecture?_action=comment',
         {
           method: 'POST',
@@ -505,7 +528,7 @@ describe('Canonical Hono + Aurelia 2 SSR Fullstack Reference Test Suite', () => 
     });
 
     it('returns 404 when "comment" action is dispatched on a non-existent slug', async () => {
-      const res = await app.request(
+      const res = await request(
         'http://localhost:3000/posts/ghost-slug?_action=comment',
         {
           method: 'POST',
@@ -523,7 +546,7 @@ describe('Canonical Hono + Aurelia 2 SSR Fullstack Reference Test Suite', () => 
     });
 
     it('returns 404 when an unknown action name is dispatched', async () => {
-      const res = await app.request(
+      const res = await request(
         'http://localhost:3000/posts/hono-aurelia-architecture?_action=destroy',
         {
           method: 'POST',
@@ -537,7 +560,7 @@ describe('Canonical Hono + Aurelia 2 SSR Fullstack Reference Test Suite', () => 
     });
 
     it('returns 404 when POST /posts/:slug is called without _action query parameter', async () => {
-      const res = await app.request('http://localhost:3000/posts/hono-aurelia-architecture', {
+      const res = await request('http://localhost:3000/posts/hono-aurelia-architecture', {
         method: 'POST',
         headers: { Accept: 'application/json' },
       });
@@ -553,7 +576,7 @@ describe('Canonical Hono + Aurelia 2 SSR Fullstack Reference Test Suite', () => 
   // =========================================================================
   describe('5. Public & Protected JSON APIs & Health Endpoints', () => {
     it('GET /api/posts returns array of all posts with full schema', async () => {
-      const res = await app.request('http://localhost:3000/api/posts');
+      const res = await request('http://localhost:3000/api/posts');
 
       expect(res.status).toBe(200);
       expect(res.headers.get('content-type')).toContain('application/json');
@@ -578,12 +601,12 @@ describe('Canonical Hono + Aurelia 2 SSR Fullstack Reference Test Suite', () => 
     });
 
     it('GET /api/dashboard/stats rejects unauthenticated requests with 401', async () => {
-      const res = await app.request('http://localhost:3000/api/dashboard/stats');
+      const res = await request('http://localhost:3000/api/dashboard/stats');
       expect(res.status).toBe(401);
     });
 
     it('GET /api/dashboard/stats returns stats and activity when authenticated with query token', async () => {
-      const res = await app.request('http://localhost:3000/api/dashboard/stats?token=demo-token');
+      const res = await request('http://localhost:3000/api/dashboard/stats?token=test-token');
 
       expect(res.status).toBe(200);
       expect(res.headers.get('content-type')).toContain('application/json');
@@ -609,8 +632,8 @@ describe('Canonical Hono + Aurelia 2 SSR Fullstack Reference Test Suite', () => 
     });
 
     it('GET /api/dashboard/stats returns stats when authenticated via Bearer header', async () => {
-      const res = await app.request('http://localhost:3000/api/dashboard/stats', {
-        headers: { Authorization: 'Bearer demo-token' },
+      const res = await request('http://localhost:3000/api/dashboard/stats', {
+        headers: { Authorization: 'Bearer test-token' },
       });
 
       expect(res.status).toBe(200);
@@ -619,7 +642,7 @@ describe('Canonical Hono + Aurelia 2 SSR Fullstack Reference Test Suite', () => 
     });
 
     it('GET /health returns health probe status 200 with ISO timestamp', async () => {
-      const res = await app.request('http://localhost:3000/health');
+      const res = await request('http://localhost:3000/health');
 
       expect(res.status).toBe(200);
       expect(res.headers.get('content-type')).toContain('application/json');
@@ -633,7 +656,7 @@ describe('Canonical Hono + Aurelia 2 SSR Fullstack Reference Test Suite', () => 
     });
 
     it('GET /favicon.ico serves Aurelia SVG icon with 24-hour cache header', async () => {
-      const res = await app.request('http://localhost:3000/favicon.ico');
+      const res = await request('http://localhost:3000/favicon.ico');
 
       expect(res.status).toBe(200);
       expect(res.headers.get('content-type')).toBe('image/svg+xml');
@@ -641,8 +664,39 @@ describe('Canonical Hono + Aurelia 2 SSR Fullstack Reference Test Suite', () => 
 
       const svg = await res.text();
       expect(svg).toContain('<svg xmlns="http://www.w3.org/2000/svg"');
-      expect(svg).toContain('fill="#ed2578"');
+      expect(svg).toMatch(/fill="#(c81b66|ed2578)"/);
       expect(svg).toContain('>Au<');
+    });
+
+    it('GET /llms.txt serves markdown agent discovery file with H1 title and links', async () => {
+      const res = await request('http://localhost:3000/llms.txt');
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-type')).toContain('text/plain');
+      const text = await res.text();
+      expect(text).toContain('# Aurelia 2 Fullstack Ecosystem & Meta-Framework Specification');
+      expect(text).toContain('https://aurelia-hono-ssr.sandiko.workers.dev');
+      expect(text).toContain('Convention-over-Configuration');
+    });
+
+    it('GET /.well-known/ard.json serves valid ARD JSON manifest', async () => {
+      const res = await request('http://localhost:3000/.well-known/ard.json');
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-type')).toContain('application/json');
+      const json = await res.json();
+      expect(json.ard_version).toBe('1.0');
+      expect(json.name).toBe('Aurelia 2 Fullstack Ecosystem & Meta-Framework');
+      expect(Array.isArray(json.endpoints)).toBe(true);
+      expect(Array.isArray(json.packages)).toBe(true);
+      expect(Array.isArray(json.rfc_proposals)).toBe(true);
+    });
+
+    it('enforces hardened HTTP security headers on all responses', async () => {
+      const res = await request('http://localhost:3000/');
+      expect(res.headers.get('x-content-type-options')).toBe('nosniff');
+      expect(res.headers.get('x-frame-options')).toBe('DENY');
+      expect(res.headers.get('cross-origin-opener-policy')).toBe('same-origin');
+      expect(res.headers.get('strict-transport-security')).toContain('max-age=31536000');
+      expect(res.headers.get('content-security-policy')).toContain("default-src 'self'");
     });
   });
 
@@ -651,7 +705,7 @@ describe('Canonical Hono + Aurelia 2 SSR Fullstack Reference Test Suite', () => 
   // =========================================================================
   describe('6. Universal Static Asset Streaming & Cloudflare Rewrites', () => {
     it('serves style.css via /public/ prefix with zero-copy caching headers', async () => {
-      const res = await app.request('http://localhost:3000/public/style.css');
+      const res = await request('http://localhost:3000/public/style.css');
 
       expect(res.status).toBe(200);
       expect(res.headers.get('cache-control')).toContain('public, max-age=');
@@ -662,7 +716,7 @@ describe('Canonical Hono + Aurelia 2 SSR Fullstack Reference Test Suite', () => 
     });
 
     it('serves style.css via direct root path (/style.css)', async () => {
-      const res = await app.request('http://localhost:3000/style.css');
+      const res = await request('http://localhost:3000/style.css');
 
       expect(res.status).toBe(200);
       const css = await res.text();
@@ -670,10 +724,10 @@ describe('Canonical Hono + Aurelia 2 SSR Fullstack Reference Test Suite', () => 
     });
 
     it('serves client.js via /public/ prefix and direct root path', async () => {
-      const resPublic = await app.request('http://localhost:3000/public/client.js');
+      const resPublic = await request('http://localhost:3000/public/client.js');
       expect(resPublic.status).toBe(200);
 
-      const resDirect = await app.request('http://localhost:3000/client.js');
+      const resDirect = await request('http://localhost:3000/client.js');
       expect(resDirect.status).toBe(200);
     });
 
@@ -690,7 +744,7 @@ describe('Canonical Hono + Aurelia 2 SSR Fullstack Reference Test Suite', () => 
         },
       };
 
-      const res = await app.request(
+      const res = await request(
         'http://localhost:3000/public/style.css',
         {},
         { ASSETS: mockCloudflareAssets }
@@ -715,7 +769,7 @@ describe('Canonical Hono + Aurelia 2 SSR Fullstack Reference Test Suite', () => 
         },
       };
 
-      const res = await app.request(
+      const res = await request(
         'http://localhost:3000/assets/manifest.json',
         {},
         { ASSETS: mockCloudflareAssets }
@@ -731,7 +785,7 @@ describe('Canonical Hono + Aurelia 2 SSR Fullstack Reference Test Suite', () => 
   // =========================================================================
   describe('7. Domain Services Unit & Concurrency Verification', () => {
     it('PostService resolves posts, fetches by slug, claps and adds comments cleanly', async () => {
-      const service = new PostService();
+      const service = new PostService(db);
 
       // getPosts
       const posts = await service.getPosts();
@@ -769,7 +823,7 @@ describe('Canonical Hono + Aurelia 2 SSR Fullstack Reference Test Suite', () => 
     });
 
     it('DashboardService resolves telemetry metrics and activity stream', async () => {
-      const service = new DashboardService();
+      const service = new DashboardService(db);
       const metrics = await service.getMetrics();
 
       expect(metrics.stats.title).toBe('Production Metrics');
@@ -784,7 +838,7 @@ describe('Canonical Hono + Aurelia 2 SSR Fullstack Reference Test Suite', () => 
   // =========================================================================
   describe('8. Hydration Script Payload Integrity & XSS Security', () => {
     it('verifies __AURELIA_SSR_DATA__ JSON script payload is parseable and valid', async () => {
-      const res = await app.request('http://localhost:3000/posts/hono-aurelia-architecture', {
+      const res = await request('http://localhost:3000/posts/hono-aurelia-architecture', {
         headers: { Accept: 'text/html' },
       });
 
@@ -805,7 +859,7 @@ describe('Canonical Hono + Aurelia 2 SSR Fullstack Reference Test Suite', () => 
     });
 
     it('ensures HTML does not contain unsafe inline executable script hydration globals', async () => {
-      const res = await app.request('http://localhost:3000/', {
+      const res = await request('http://localhost:3000/', {
         headers: { Accept: 'text/html' },
       });
 

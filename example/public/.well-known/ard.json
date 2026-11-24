@@ -1,0 +1,136 @@
+{
+  "$schema": "https://agentic.dev/schemas/ard-v1.json",
+  "ard_version": "1.0",
+  "name": "Aurelia 2 Fullstack Ecosystem & Meta-Framework",
+  "description": "Production-ready enterprise SaaS admin dashboard, LinkeDOM real-DOM Edge SSR, and upstream Hono meta-framework adapters",
+  "url": "https://aurelia-hono-ssr.sandiko.workers.dev",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sandikodev/aureliajs",
+    "steward": "Sandiko Dev (@sandikodev)",
+    "license": "MIT"
+  },
+  "llms_txt": "https://aurelia-hono-ssr.sandiko.workers.dev/llms.txt",
+  "capabilities": [
+    "convention-over-configuration",
+    "real-dom-ssr",
+    "web-streams-streaming",
+    "dependency-injection",
+    "edge-database",
+    "single-file-components-aux",
+    "rest-api",
+    "enterprise-saas",
+    "webmcp-agentic-discovery"
+  ],
+  "philosophy": {
+    "core": "Convention-over-Configuration as the essential antidote to LLM hallucination and architectural entropy",
+    "stewardship": "The software engineer acts as an architectural steward deciding clean patterns, ethical environments, and sustainable systems",
+    "mutual_alignment": "Hono (edge cloud minimalism) and Aurelia 2 (direct-DOM standards) form an unbroken Web Standards continuum with zero glue code",
+    "status": "Open community proposal and living RFC invitation for healthy debate and upstream collaboration"
+  },
+  "packages": [
+    {
+      "name": "@hono/aurelia",
+      "path": "packages/hono-aurelia",
+      "description": "Thin, zero-boilerplate Hono meta-framework adapter for Aurelia 2 SSR and server actions",
+      "exports": ["aurelia", "aureliaAction", "aureliaRenderer", "createClientHydrator"]
+    },
+    {
+      "name": "@aureliajs/ssr",
+      "path": "packages/aurelia-ssr",
+      "description": "Request-isolated real-DOM SSR engine using LinkeDOM with Web Streams streaming support",
+      "exports": ["renderAurelia", "createDocumentShell", "serializeState", "createHydrationScript"]
+    },
+    {
+      "name": "@aureliajs/islands",
+      "path": "packages/aurelia-islands",
+      "description": "Islands Architecture runtime for zero-JS progressive hydration",
+      "exports": ["defineIsland", "hydrateIslands"]
+    },
+    {
+      "name": "@aureliajs/bridge",
+      "path": "packages/aurelia-bridge",
+      "description": "Polyglot component interoperability bridging React and Vue into Aurelia 2",
+      "exports": ["BridgeElement", "bridgePlugin"]
+    },
+    {
+      "name": "@aureliajs/vite-plugin-aux",
+      "path": "packages/vite-plugin-aux",
+      "description": "Single-File Component (.aux) compiler for Vite, Bun, and esbuild",
+      "exports": ["auxPlugin", "auxEsbuildPlugin", "auxBunPlugin"]
+    },
+    {
+      "name": "ssr-playground",
+      "path": "packages/ssr-playground",
+      "description": "Interactive developer workbench with 16 reference pattern suites"
+    }
+  ],
+  "rfc_proposals": [
+    {
+      "id": "RFC-000",
+      "title": "Master Native Purity Initiative",
+      "url": "https://github.com/sandikodev/aureliajs/blob/main/.github/issues/00-master-native-purity-initiative.md",
+      "status": "Accepted / In Progress"
+    },
+    {
+      "id": "RFC-001",
+      "title": "Migrate SSR DOM from JSDOM to LinkeDOM",
+      "url": "https://github.com/sandikodev/aureliajs/blob/main/.github/issues/03-rfc-migrate-ssr-dom-from-jsdom-to-linkedom.md",
+      "status": "Implemented"
+    },
+    {
+      "id": "RFC-002",
+      "title": "Eliminate React CSS Utilities (CVA, CLSX) in Web App",
+      "url": "https://github.com/sandikodev/aureliajs/blob/main/.github/issues/02-rfc-eliminate-react-css-utilities-in-web.md",
+      "status": "Implemented"
+    },
+    {
+      "id": "RFC-003",
+      "title": "Master Architectural Manifesto: Aurelia 2 + Hono",
+      "url": "https://github.com/sandikodev/aureliajs/blob/main/docs/AURELIA_HONO_MASTER_MANIFESTO.md",
+      "status": "Active Standard"
+    }
+  ],
+  "endpoints": [
+    {
+      "name": "Edge SSR Reference Application",
+      "url": "https://aurelia-hono-ssr.sandiko.workers.dev",
+      "method": "GET",
+      "description": "Live Hono + Aurelia 2 SSR application running on Cloudflare Workers and D1 database"
+    },
+    {
+      "name": "Edge Telemetry Dashboard",
+      "url": "https://aurelia-hono-ssr.sandiko.workers.dev/dashboard",
+      "method": "GET",
+      "description": "Session-authenticated real-time production telemetry dashboard"
+    },
+    {
+      "name": "Featured Posts API",
+      "url": "https://aurelia-hono-ssr.sandiko.workers.dev/api/posts",
+      "method": "GET",
+      "description": "JSON REST endpoint for engineering publications"
+    },
+    {
+      "name": "Production SaaS Admin Dashboard",
+      "url": "https://aureliajs.vercel.app",
+      "method": "GET",
+      "description": "Live production multi-tenant SaaS application on Vercel Edge"
+    },
+    {
+      "name": "Production Health Probe",
+      "url": "https://aureliajs.vercel.app/api/health",
+      "method": "GET",
+      "description": "Edge API availability health probe"
+    },
+    {
+      "name": "Neon PostgreSQL Projects API",
+      "url": "https://aureliajs.vercel.app/api/projects",
+      "method": "GET",
+      "description": "Enterprise projects querying endpoint backed by Neon PostgreSQL"
+    }
+  ],
+  "contact": {
+    "name": "Sandiko Dev",
+    "url": "https://github.com/sandikodev"
+  }
+}

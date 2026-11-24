@@ -1,37 +1,29 @@
 /**
- * Post Service — Enterprise Aurelia 2 Domain Service
+ * Post Service — Aurelia 2 Domain Service
  *
- * Demonstrates idiomatic, zero-boilerplate service architecture:
- * - Direct in-memory / database access during server SSR & Server Actions
- * - Typed client HTTP data fetching during client-side SPA navigation
- * - Injected cleanly via Aurelia 2 DI (`resolve(PostService)`)
+ * The database is the only source of truth. An empty D1 database means an
+ * empty blog, never a silently substituted fixture.
  */
 
-import { initialPosts, type Post, type Comment } from '../data';
+import type { Post, Comment } from '../data';
 
 export class PostService {
   constructor(private readonly db?: any) {}
 
   /**
    * Fetch all posts.
-   * On server (SSR): reads directly from repository (0 network overhead).
-   * On client: calls Hono REST endpoint.
+   * On server (SSR): reads directly from D1 (0 network overhead).
+   * On client: calls the Hono REST endpoint.
    */
   async getPosts(): Promise<Post[]> {
     if (typeof window === 'undefined') {
-      if (this.db) {
-        try {
-          const { results } = await this.db.prepare('SELECT * FROM posts ORDER BY id ASC').all();
-          if (results && results.length > 0) {
-            return results.map((r: any) => ({
-              ...r,
-              readTime: r.read_time ?? r.readTime,
-              comments: [],
-            }));
-          }
-        } catch {}
-      }
-      return initialPosts;
+      if (!this.db) return [];
+      const { results } = await this.db.prepare('SELECT * FROM posts ORDER BY id ASC').all();
+      return (results ?? []).map((r: any) => ({
+        ...r,
+        readTime: r.read_time ?? r.readTime,
+        comments: [],
+      }));
     }
     const res = await fetch('/api/posts', {
       headers: { Accept: 'application/json' },
@@ -40,55 +32,42 @@ export class PostService {
     return (await res.json()) as Post[];
   }
 
-  /**
-   * Retrieve single post by slug.
-   */
+  /** Retrieve a single post by slug. */
   async getBySlug(slug: string): Promise<Post | null> {
-    if (typeof window === 'undefined' && this.db) {
-      try {
-        const post = await this.db.prepare('SELECT * FROM posts WHERE slug = ?').bind(slug).first();
-        if (!post) return null;
-        const { results: comments } = await this.db
-          .prepare('SELECT * FROM comments WHERE post_slug = ? ORDER BY id ASC')
-          .bind(slug)
-          .all();
-        return {
-          ...post,
-          readTime: post.read_time ?? post.readTime,
-          comments: comments ?? [],
-        };
-      } catch {}
+    if (typeof window === 'undefined') {
+      if (!this.db) return null;
+      const post = await this.db.prepare('SELECT * FROM posts WHERE slug = ?').bind(slug).first();
+      if (!post) return null;
+      const { results: comments } = await this.db
+        .prepare('SELECT * FROM comments WHERE post_slug = ? ORDER BY id ASC')
+        .bind(slug)
+        .all();
+      return {
+        ...post,
+        readTime: post.read_time ?? post.readTime,
+        comments: comments ?? [],
+      };
     }
-    const found = initialPosts.find((p) => p.slug === slug);
-    return found ?? null;
+    const posts = await this.getPosts();
+    return posts.find((post) => post.slug === slug) ?? null;
   }
 
-  /**
-   * Server-side action: increment claps directly in the data store.
-   */
+  /** Server-side action: increment claps directly in the data store. */
   async clap(slug: string): Promise<Post | null> {
-    if (this.db) {
-      try {
-        await this.db.prepare('UPDATE posts SET claps = claps + 1 WHERE slug = ?').bind(slug).run();
-        const post = await this.db.prepare('SELECT * FROM posts WHERE slug = ?').bind(slug).first();
-        if (!post) return null;
-        return {
-          ...post,
-          readTime: post.read_time ?? post.readTime,
-          comments: [],
-        };
-      } catch {}
-    }
-    const post = initialPosts.find((p) => p.slug === slug);
+    if (!this.db) return null;
+    await this.db.prepare('UPDATE posts SET claps = claps + 1 WHERE slug = ?').bind(slug).run();
+    const post = await this.db.prepare('SELECT * FROM posts WHERE slug = ?').bind(slug).first();
     if (!post) return null;
-    post.claps += 1;
-    return post;
+    return {
+      ...post,
+      readTime: post.read_time ?? post.readTime,
+      comments: [],
+    };
   }
 
-  /**
-   * Server-side action: append new comment.
-   */
+  /** Server-side action: append a new comment. */
   async addComment(slug: string, author: string, text: string): Promise<Comment | null> {
+    if (!this.db) return null;
     const trimmedAuthor = author.trim() || 'Anonymous Engineer';
     const trimmedText = text.trim();
     const comment: Comment = {
@@ -98,30 +77,16 @@ export class PostService {
       date: 'Just now',
     };
 
-    if (this.db) {
-      try {
-        const post = await this.db
-          .prepare('SELECT id FROM posts WHERE slug = ?')
-          .bind(slug)
-          .first();
-        if (!post) return null;
-        await this.db
-          .prepare('INSERT INTO comments (post_slug, author, text, date) VALUES (?, ?, ?, ?)')
-          .bind(slug, comment.author, comment.text, comment.date)
-          .run();
-        return comment;
-      } catch {}
-    }
-
-    const post = initialPosts.find((p) => p.slug === slug);
+    const post = await this.db.prepare('SELECT id FROM posts WHERE slug = ?').bind(slug).first();
     if (!post) return null;
-    post.comments.push(comment);
+    await this.db
+      .prepare('INSERT INTO comments (post_slug, author, text, date) VALUES (?, ?, ?, ?)')
+      .bind(slug, comment.author, comment.text, comment.date)
+      .run();
     return comment;
   }
 
-  /**
-   * Client-side RPC: trigger `like` server action on Hono route.
-   */
+  /** Client-side RPC: trigger `like` server action on the Hono route. */
   async clapRemote(slug: string): Promise<number | null> {
     const res = await fetch(`/posts/${slug}?_action=like`, {
       method: 'POST',
@@ -132,9 +97,7 @@ export class PostService {
     return typeof body.claps === 'number' ? body.claps : null;
   }
 
-  /**
-   * Client-side RPC: trigger `comment` server action on Hono route.
-   */
+  /** Client-side RPC: trigger `comment` server action on the Hono route. */
   async addCommentRemote(slug: string, author: string, text: string): Promise<Comment | null> {
     const res = await fetch(`/posts/${slug}?_action=comment`, {
       method: 'POST',
