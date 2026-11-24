@@ -23,12 +23,6 @@
       "displayName": "Edge Worker Health Probe",
       "type": "application/json",
       "url": "https://aurelia-hono-ssr.sandiko.workers.dev/health"
-    },
-    {
-      "identifier": "urn:air:sandiko.workers.dev:page:dashboard",
-      "displayName": "Real-time Telemetry Dashboard",
-      "type": "text/html",
-      "url": "https://aurelia-hono-ssr.sandiko.workers.dev/dashboard?token=demo-token"
     }
   ]
 }

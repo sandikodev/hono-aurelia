@@ -14,7 +14,7 @@ We've identified a **critical gap in the Aurelia 2 ecosystem**: no native fullst
 
 **Proposal:** Create `@hono/aurelia` — a production-grade SSR adapter that bridges Hono + Aurelia and transforms them from "SPA + headless API" into a native **fullstack framework**.
 
-**Current Status:** Phase 1 (Core Renderer) complete with 1,789 lines of code, 32 test cases, and comprehensive documentation.
+**Current Status:** Phase 1 (Core Renderer) complete with 1,789 lines of code, 32 test cases, and comprehensive documentation. *(Historical Phase 1 snapshot from 2026-11-13, not the current suite total.)*
 
 **Why This Matters:**
 - Solves real pain point in every Aurelia + Hono project

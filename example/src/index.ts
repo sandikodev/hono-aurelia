@@ -109,7 +109,9 @@ app.use('*', async (c, next) => {
   const configured = (c.env as { TELEMETRY_TOKEN?: string } | undefined)?.TELEMETRY_TOKEN;
   const token =
     c.req.query('token') || c.req.header('Authorization')?.replace(/^Bearer\s+/i, '');
-  if (token && ((configured && token === configured) || token === 'demo-token')) {
+  // Fail closed: no configured token means no privileged session, and no
+  // hardcoded credential can ever unlock the telemetry surface.
+  if (configured && token && token === configured) {
     c.set('user', { id: 'usr_1', email: 'operator@aureliajs.dev', name: 'Operator' });
     c.set('role', 'owner');
   }

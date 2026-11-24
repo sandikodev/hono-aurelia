@@ -287,6 +287,18 @@ describe('Canonical Hono + Aurelia 2 SSR Fullstack Reference Test Suite', () => 
       expect(res.status).toBe(401);
     });
 
+    it('rejects the retired hardcoded demo-token', async () => {
+      const res = await request('http://localhost:3000/dashboard?token=demo-token');
+      expect(res.status).toBe(401);
+    });
+
+    it('fails closed when no telemetry token is configured', async () => {
+      const res = await request('http://localhost:3000/dashboard?token=anything', {
+        TELEMETRY_TOKEN: undefined,
+      });
+      expect(res.status).toBe(401);
+    });
+
     it('blocks access when an invalid Authorization Bearer token is provided', async () => {
       const res = await request('http://localhost:3000/dashboard', {
         headers: { Authorization: 'Bearer invalid-token' },
@@ -687,6 +699,10 @@ describe('Canonical Hono + Aurelia 2 SSR Fullstack Reference Test Suite', () => 
       expect(Array.isArray(json.entries)).toBe(true);
       expect(json.entries.length).toBeGreaterThan(0);
       expect(json.entries[0].identifier).toContain('urn:air:');
+      expect(JSON.stringify(json)).not.toContain('demo-token');
+      expect(
+        json.entries.some((entry: { identifier?: string }) => entry.identifier?.includes('dashboard')),
+      ).toBe(false);
     });
 
     it('enforces hardened HTTP security headers on all responses', async () => {
