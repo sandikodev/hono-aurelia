@@ -182,8 +182,20 @@ export async function createClientNavigator<
     contextData: TContext,
     initialData: TData | undefined,
     urlStr: string,
-    ssrScope?: HydrationResult<TData, TContext>['ssrScope']
+    params?: Readonly<Record<string, string>>,
+    ssrScope?: HydrationResult<TData, TContext>['ssrScope'],
+    epoch?: number
   ): Promise<object> => {
+    const isStale = (): boolean => epoch !== undefined && epoch !== navEpoch;
+    const discardApp = async (app: Aurelia): Promise<void> => {
+      try {
+        await app.stop(true);
+        app.dispose();
+      } catch {
+        // Ignore teardown errors from an abandoned concurrent mount
+      }
+    };
+
     const hadPriorApp = activeApp !== null;
     if (activeApp) {
       try {
@@ -193,6 +205,11 @@ export async function createClientNavigator<
         // Ignore teardown errors during rapid route transitions
       }
       activeApp = null;
+    }
+
+    // A newer navigation took over while the previous app was tearing down.
+    if (isStale()) {
+      return activeInstance ?? {};
     }
 
     if (hadPriorApp && !ssrScope) {
@@ -207,7 +224,7 @@ export async function createClientNavigator<
     mutableContext = {
       data: contextData,
       url: parsedUrl.toString(),
-      params: {},
+      params: { ...params },
       query: Object.fromEntries(parsedUrl.searchParams),
       isServer: false,
       isClient: true,
@@ -239,6 +256,10 @@ export async function createClientNavigator<
         component: ComponentClass,
         ssrScope,
       });
+      if (isStale()) {
+        await discardApp(app);
+        return activeInstance ?? {};
+      }
       activeApp = app;
       activeComponentName = compName;
       activeInstance = root.controller.viewModel as object;
@@ -248,6 +269,10 @@ export async function createClientNavigator<
 
     host.replaceChildren();
     await app.app({ host, component: ComponentClass }).start();
+    if (isStale()) {
+      await discardApp(app);
+      return activeInstance ?? {};
+    }
     activeApp = app;
     activeComponentName = compName;
     activeInstance = app.root.controller.viewModel as object;
@@ -309,6 +334,7 @@ export async function createClientNavigator<
     if (activeInstance && nextCompName === activeComponentName && mutableContext) {
       mutableContext.url = resolvedUrl.toString();
       mutableContext.query = Object.fromEntries(resolvedUrl.searchParams);
+      mutableContext.params = { ...decoded.params };
       mutableContext.data = decoded.context;
       if (decoded.initialData && typeof decoded.initialData === 'object') {
         Object.assign(activeInstance, decoded.initialData);
@@ -323,7 +349,10 @@ export async function createClientNavigator<
       NextClass,
       decoded.context,
       decoded.initialData,
-      resolvedUrl.toString()
+      resolvedUrl.toString(),
+      decoded.params,
+      undefined,
+      epoch
     );
 
     if (epoch !== navEpoch) {
@@ -436,6 +465,7 @@ export async function createClientNavigator<
     (hydration?.context ?? {}) as TContext,
     hydration?.initialData,
     activeUrl,
+    hydration?.params,
     hydration?.ssrScope
   );
   options.onHydrated?.(bootName || BootClass.name, bootedInstance, hydration);

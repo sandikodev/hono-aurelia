@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import { JSDOM } from 'jsdom';
 import { Hono } from 'hono';
-import { CustomElement, PLATFORM } from 'aurelia';
+import { CustomElement, PLATFORM, resolve } from 'aurelia';
 import { aurelia, aureliaAction, aureliaDefaults } from '../src/adapter';
-import { createClientNavigator, type EnhanceSubmitContext } from '../src/client';
+import { createClientNavigator, IRequestContext, type EnhanceSubmitContext } from '../src/client';
 
 describe('@hono/aurelia/client soft navigation, preload, and au-enhance', () => {
   let dom: JSDOM;
@@ -177,5 +177,67 @@ describe('@hono/aurelia/client soft navigation, preload, and au-enhance', () => 
     expect(fetchedUrls.length).toBe(countBeforeOffline);
 
     nav?.dispose();
+  });
+
+  it('carries server route params into IRequestContext during soft navigation', async () => {
+    const ParamHome = CustomElement.define(
+      {
+        name: 'param-home-page',
+        template: '<a id="go-detail" href="/items/42">Detail</a>',
+      },
+      class {}
+    );
+
+    const ParamDetail = CustomElement.define(
+      {
+        name: 'param-detail-page',
+        template: '<p>${slug}|${routeParams.slug ?? "-"}</p>',
+      },
+      class {
+        readonly routeParams: Readonly<Record<string, string>> = {
+          ...resolve(IRequestContext).params,
+        };
+        slug = '';
+
+        static async loader(c: { req: { param: (k: string) => string } }) {
+          return { slug: c.req.param('slug') };
+        }
+      }
+    );
+
+    const app = new Hono();
+    app.use('*', aureliaDefaults({ dataEndpoint: true, preserveMarkers: false }));
+    app.get('/', aurelia(ParamHome));
+    app.get('/items/:slug', aurelia(ParamDetail));
+
+    const initialRes = await app.request('http://localhost/');
+    installDom(await initialRes.text(), 'http://localhost/');
+
+    const localFetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const reqUrl = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      return await app.request(reqUrl, init);
+    }) as unknown as typeof fetch;
+    globalThis.fetch = localFetch;
+
+    const nav = await createClientNavigator({
+      components: [ParamHome, ParamDetail],
+      fetch: localFetch,
+    });
+    expect(nav).not.toBeNull();
+
+    dom.window.document
+      .getElementById('go-detail')!
+      .dispatchEvent(
+        new dom.window.MouseEvent('click', { bubbles: true, cancelable: true, button: 0 })
+      );
+    await new Promise((r) => setTimeout(r, 25));
+
+    expect(nav!.currentInstance).toMatchObject({
+      slug: '42',
+      routeParams: { slug: '42' },
+    });
+    expect(dom.window.document.querySelector('app-root')!.innerHTML).toContain('42|42');
+
+    nav!.dispose();
   });
 });

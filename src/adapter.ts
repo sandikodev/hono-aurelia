@@ -249,7 +249,11 @@ export function aurelia<
     const engine = config.engine ?? scoped?.engine;
     const fallback = config.fallback ?? compMeta?.fallback ?? scoped?.fallback ?? 'throw';
     const documentOpts = { ...scoped?.document, ...config.document };
-    const serializeOpts = config.serialize ?? scoped?.serialize;
+    const serializeOpts = {
+      ...scoped?.serialize,
+      ...config.serialize,
+      params: c.req.param(),
+    };
     const onError = config.onError ?? scoped?.onError;
     const timeout = config.timeout ?? scoped?.timeout;
     const registrations = [...(scoped?.registrations ?? []), ...(config.registrations ?? [])];
