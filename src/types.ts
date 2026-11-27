@@ -121,6 +121,13 @@ export interface AureliaRouteConfig<
   timeout?: number;
 }
 
+export interface AureliaCsrfOptions {
+  /** Additional origins permitted to submit cross-origin actions. */
+  readonly trustedOrigins?: readonly string[];
+  /** Reject requests that omit both `Origin` and `Sec-Fetch-Site` headers (default: `false`). */
+  readonly requireOriginOnForms?: boolean;
+}
+
 /**
  * Options for `aureliaAction()`.
  */
@@ -130,6 +137,23 @@ export interface AureliaActionOptions<E extends Env = Env> {
    * Defaults to query param `_action`, then header `X-Action`, then `'default'`.
    */
   resolveAction?: (c: Context<E>) => string | undefined | Promise<string | undefined>;
+  /**
+   * Fetch-spec Origin / Sec-Fetch-Site CSRF validation for action mutations.
+   * Enabled (`true`) by default. Pass `false` only for public machine-to-machine endpoints.
+   */
+  csrf?: boolean | AureliaCsrfOptions;
+  /**
+   * Redirect target for non-JS HTML `<form>` Post/Redirect/Get (PRG) submissions.
+   * Defaults to the current request pathname with `_action` removed from query params.
+   */
+  redirectTo?: string | ((result: unknown, c: Context<E>) => string);
+}
+
+export interface AureliaLayoutOptions<
+  E extends Env = Env,
+  TData extends Record<string, unknown> = Record<string, unknown>,
+> {
+  readonly loader: AureliaLoader<E, TData>;
 }
 
 /**

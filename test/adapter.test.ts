@@ -2,7 +2,7 @@ import { describe, it, expect } from 'bun:test';
 import { Hono } from 'hono';
 import { CustomElement } from 'aurelia';
 import { DEFAULT_SCRIPT_ID, resolveRequestContext } from '@aureliajs/ssr';
-import { aurelia, aureliaAction, aureliaDefaults, aureliaRenderer } from '../src/adapter';
+import { aurelia, aureliaAction, aureliaDefaults, aureliaLayout, aureliaRenderer } from '../src/adapter';
 
 const SimplePage = CustomElement.define(
   {
@@ -352,6 +352,173 @@ describe('@hono/aurelia adapter', () => {
 
       const singleRes = await app.request('/single', { method: 'POST' });
       expect(await singleRes.json()).toEqual({ created: true });
+    });
+
+    it('enforces Fetch-spec CSRF protection and supports PRG 303 redirect for non-JS HTML forms', async () => {
+      const app = new Hono();
+      app.post(
+        '/comments',
+        aureliaAction(
+          {
+            create: async () => ({ saved: true }),
+          },
+          { csrf: { trustedOrigins: ['https://partner.example'] } }
+        )
+      );
+
+      // 1. Cross-origin Origin header rejected with 403
+      const evilOrigin = await app.request('http://localhost/comments?_action=create', {
+        method: 'POST',
+        headers: { Origin: 'https://evil.example' },
+      });
+      expect(evilOrigin.status).toBe(403);
+
+      // 2. Cross-site Sec-Fetch-Site rejected with 403
+      const evilFetchSite = await app.request('http://localhost/comments?_action=create', {
+        method: 'POST',
+        headers: { 'Sec-Fetch-Site': 'cross-site' },
+      });
+      expect(evilFetchSite.status).toBe(403);
+
+      // 3. Same-origin non-JS HTML <form> receives 303 See Other PRG redirect without _action param
+      const htmlForm = await app.request('http://localhost/comments?page=2&_action=create', {
+        method: 'POST',
+        headers: {
+          Origin: 'http://localhost',
+          Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        },
+      });
+      expect(htmlForm.status).toBe(303);
+      expect(htmlForm.headers.get('location')).toBe('/comments?page=2');
+
+      // 4. Trusted external origin with X-Aurelia-Enhance receives JSON
+      const trusted = await app.request('http://localhost/comments?_action=create', {
+        method: 'POST',
+        headers: {
+          Origin: 'https://partner.example',
+          Accept: 'application/json',
+          'X-Aurelia-Enhance': '1',
+        },
+      });
+      expect(trusted.status).toBe(200);
+      expect(await trusted.json()).toEqual({ saved: true });
+    });
+
+    it('treats cross-site as forbidden even with a matching or trusted Origin, and supports strict mode', async () => {
+      const app = new Hono();
+      app.post(
+        '/strict',
+        aureliaAction(
+          { go: async () => ({ ok: true }) },
+          { csrf: { requireOriginOnForms: true } }
+        )
+      );
+      app.post(
+        '/partner',
+        aureliaAction(
+          { go: async () => ({ ok: true }) },
+          { csrf: { trustedOrigins: ['https://partner.example'] } }
+        )
+      );
+      app.post('/open', aureliaAction({ go: async () => ({ ok: true }) }, { csrf: false }));
+
+      const forged = await app.request('http://localhost/strict?_action=go', {
+        method: 'POST',
+        headers: {
+          Origin: 'http://localhost',
+          'Sec-Fetch-Site': 'cross-site',
+          Accept: 'application/json',
+        },
+      });
+      expect(forged.status).toBe(403);
+
+      const nullOrigin = await app.request('http://localhost/strict?_action=go', {
+        method: 'POST',
+        headers: { Origin: 'null', Accept: 'application/json' },
+      });
+      expect(nullOrigin.status).toBe(403);
+
+      const noHeaders = await app.request('http://localhost/strict?_action=go', {
+        method: 'POST',
+        headers: { Accept: 'application/json' },
+      });
+      expect(noHeaders.status).toBe(403);
+
+      const trustedCrossSite = await app.request('http://localhost/partner?_action=go', {
+        method: 'POST',
+        headers: {
+          Origin: 'https://partner.example',
+          'Sec-Fetch-Site': 'cross-site',
+          Accept: 'application/json',
+        },
+      });
+      expect(trustedCrossSite.status).toBe(403);
+
+      const open = await app.request('http://localhost/open?_action=go', { method: 'POST' });
+      expect(open.status).toBe(200);
+    });
+
+    it('cascades parent aureliaLayout() data into child routes and applies serialize.replacer on dataEndpoint', async () => {
+      type LayoutEnv = { Variables: { secretToken: string; publicRole: string } };
+      const app = new Hono<LayoutEnv>();
+
+      const ChildPage = CustomElement.define(
+        { name: 'child-page', template: '<div>${org} - ${project}</div>' },
+        class {
+          org = '';
+          project = '';
+        }
+      );
+
+      app.use('*', async (c, next) => {
+        c.set('secretToken', 'super-secret');
+        c.set('publicRole', 'owner');
+        await next();
+      });
+
+      app.use(
+        '*',
+        aureliaDefaults<LayoutEnv>({
+          dataEndpoint: true,
+          serialize: {
+            replacer: (key, val) => (key === 'secretToken' ? undefined : val),
+          },
+        })
+      );
+
+      app.use('/app/*', aureliaLayout(async () => ({ org: 'AureliaCorp' })));
+      app.use('/guarded/*', aureliaLayout((c) => c.redirect('/login', 302)));
+
+      app.get(
+        '/app/projects',
+        aurelia({
+          component: ChildPage,
+          preserveMarkers: false,
+          loader: async () => ({ project: 'AureliaKit' }),
+        })
+      );
+      app.get('/guarded/ billing', aurelia(ChildPage));
+      app.get('/guarded/billing', aurelia(ChildPage));
+
+      const htmlRes = await app.request('/app/projects');
+      expect(await htmlRes.text()).toContain('AureliaCorp - AureliaKit');
+      expect(htmlRes.headers.get('vary')).toContain('Accept');
+
+      const jsonRes = await app.request('/app/projects', {
+        headers: { Accept: 'application/json' },
+      });
+      expect(jsonRes.headers.get('vary')).toContain('Accept');
+      const jsonBody = (await jsonRes.json()) as {
+        context: Record<string, unknown>;
+        initialData: { org: string; project: string };
+      };
+      expect(jsonBody.initialData).toEqual({ org: 'AureliaCorp', project: 'AureliaKit' });
+      expect(jsonBody.context.publicRole).toBe('owner');
+      expect(jsonBody.context.secretToken).toBeUndefined();
+
+      const guardedRes = await app.request('/guarded/billing');
+      expect(guardedRes.status).toBe(302);
+      expect(guardedRes.headers.get('location')).toBe('/login');
     });
   });
 });

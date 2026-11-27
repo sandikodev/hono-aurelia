@@ -183,7 +183,7 @@ bindings and live smoke tests.
 
 1. **Streaming Error Handling After Preamble Flush**: Once `shell.preamble` is flushed in `streaming: true` mode, HTTP status code `200` is already committed to the wire (a fundamental property of HTTP/1.1 & HTTP/2 streaming). Contributors interested in out-of-order streaming error boundaries or trailer headers are welcome to propose RFCs.
 2. **Edge Runtime Compatibility**: `@hono/aurelia` itself is 100% Web-Standards and Edge-safe (zero `node:*` imports). Cloudflare Workers execution is proven by the live example via `buildWorker()` with the LinkeDOM path; broader parity (e.g. Deno Deploy and environments without a Worker-style asset binding) still depends on `@aureliajs/ssr` DOM-backend work.
-3. **CSRF & Progressive Form Enhancement Helpers**: `aureliaAction()` intentionally stays minimal and delegates CSRF validation to standard Hono middleware (`hono/csrf`), while richer progressive-enhancement helpers for `<form>` submissions can be explored cleanly as optional add-ons.
+3. **CSRF & Progressive Form Enhancement**: `aureliaAction()` checks `Origin` and `Sec-Fetch-Site` for mutations by default and sends a `303` PRG redirect when a plain HTML form posts without JavaScript. Enhanced submissions go through `<form au-enhance>` from `@hono/aurelia/client`. A stricter trust model can still be layered with `hono/csrf` or `csrf: { trustedOrigins, requireOriginOnForms }`.
 
 ---
 

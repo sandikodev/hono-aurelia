@@ -17,6 +17,7 @@ import {
   createHydrationScript,
   renderAurelia,
   serializeState,
+  stringifyPayload,
   type AureliaComponent,
   type ComponentProps,
   type RenderContext,
@@ -26,7 +27,10 @@ import type {
   AureliaActionMap,
   AureliaActionOptions,
   AureliaActionSource,
+  AureliaCsrfOptions,
   AureliaDefaultsOptions,
+  AureliaLayoutOptions,
+  AureliaLoader,
   AureliaRouteComponent,
   AureliaRouteConfig,
 } from './types';
@@ -36,6 +40,7 @@ import type {
  * Avoids polluting Hono's `c.var`, requires zero type casts, and auto-GCs with the request.
  */
 const defaultsByRequest = new WeakMap<Request, unknown>();
+const layoutDataByRequest = new WeakMap<Request, Record<string, unknown>>();
 
 /**
  * Hono middleware registering router-scoped defaults for downstream `aurelia()` handlers.
@@ -94,21 +99,55 @@ export function aureliaDefaults<E extends Env = Env>(
  */
 export const aureliaRenderer = aureliaDefaults;
 
+/**
+ * Hono middleware executing a parent layout data loader whose returned props cascade
+ * into downstream `aurelia()` route handlers on the same request (`{ ...layoutData, ...pageData }`).
+ * Returning a `Response` (such as a `302` redirect) short-circuits downstream handlers immediately.
+ */
+export function aureliaLayout<
+  E extends Env = Env,
+  TData extends Record<string, unknown> = Record<string, unknown>,
+>(
+  loaderOrOptions: AureliaLoader<E, TData> | AureliaLayoutOptions<E, TData>
+): MiddlewareHandler<E> {
+  const loader =
+    typeof loaderOrOptions === 'function' ? loaderOrOptions : loaderOrOptions.loader;
+
+  return async (c, next) => {
+    const result = await loader(c);
+    if (result instanceof Response) {
+      return result;
+    }
+    if (result && typeof result === 'object') {
+      const prev = layoutDataByRequest.get(c.req.raw) ?? {};
+      layoutDataByRequest.set(c.req.raw, { ...prev, ...result });
+    }
+    await next();
+    return;
+  };
+}
+
+function parseMimeQuality(acceptHeader: string, mime: string): number {
+  const lower = acceptHeader.toLowerCase();
+  const idx = lower.indexOf(mime);
+  if (idx === -1) return 0;
+  const segment = acceptHeader.slice(idx + mime.length).split(',')[0] ?? '';
+  const qMatch = /;\s*q=([0-9.]+)/i.exec(segment);
+  if (!qMatch?.[1]) return 1;
+  const value = Number(qMatch[1]);
+  return Number.isFinite(value) ? value : 0;
+}
+
 function acceptsJsonOverHtml(acceptHeader?: string): boolean {
   if (!acceptHeader || !acceptHeader.includes('application/json')) return false;
   if (!acceptHeader.includes('text/html')) return true;
+  return parseMimeQuality(acceptHeader, 'application/json') > parseMimeQuality(acceptHeader, 'text/html');
+}
 
-  const parseQ = (mime: string): number => {
-    const idx = acceptHeader.toLowerCase().indexOf(mime);
-    if (idx === -1) return 0;
-    const segment = acceptHeader.slice(idx + mime.length).split(',')[0] ?? '';
-    const qMatch = /;\s*q=([0-9.]+)/i.exec(segment);
-    if (!qMatch?.[1]) return 1;
-    const value = Number(qMatch[1]);
-    return Number.isFinite(value) ? value : 0;
-  };
-
-  return parseQ('application/json') > parseQ('text/html');
+function acceptsHtmlOverJson(acceptHeader?: string): boolean {
+  if (!acceptHeader || !acceptHeader.includes('text/html')) return false;
+  if (!acceptHeader.includes('application/json')) return true;
+  return parseMimeQuality(acceptHeader, 'text/html') >= parseMimeQuality(acceptHeader, 'application/json');
 }
 
 function resolveComponentName(component: unknown): string {
@@ -222,9 +261,10 @@ export function aurelia<
         ? await contextResolver(c)
         : ((c.var as Record<string, unknown> | undefined) ?? {});
 
-      // 2. Execute single typed loader (route config overrides co-located static loader)
+      // 2. Execute single typed loader merged atop any parent aureliaLayout() data
+      const inheritedLayoutData = layoutDataByRequest.get(c.req.raw);
       const activeLoader = config.loader ?? compMeta?.loader;
-      let initialData = {} as TData;
+      let pageData: Record<string, unknown> = {};
 
       if (typeof activeLoader === 'function') {
         try {
@@ -233,12 +273,16 @@ export function aurelia<
             return loaded;
           }
           if (loaded && typeof loaded === 'object') {
-            initialData = loaded;
+            pageData = loaded;
           }
         } catch (loaderError) {
           if (fallback !== 'spa') throw loaderError;
         }
       }
+
+      const initialData = (
+        inheritedLayoutData ? { ...inheritedLayoutData, ...pageData } : pageData
+      ) as TData;
 
       const componentName = resolveComponentName(config.component);
 
@@ -255,18 +299,17 @@ export function aurelia<
           ? statusSource(initialData, c)
           : statusSource ?? 200;
 
-      // 4. Opt-in JSON data endpoint
+      // 4. Opt-in JSON data endpoint (uses identical serializeState & replacer pipeline as HTML SSR)
       if (dataEndpoint && acceptsJsonOverHtml(c.req.header('Accept'))) {
-        return c.json(
-          {
-            component: componentName,
-            title: effectiveTitle,
-            context,
-            initialData,
-            timestamp: Date.now(),
-          },
-          effectiveStatus
-        );
+        const payload = await serializeState(context, initialData, componentName, serializeOpts);
+        const bodyJson = stringifyPayload({
+          ...payload,
+          title: effectiveTitle,
+        });
+        return c.body(bodyJson, effectiveStatus, {
+          'Content-Type': 'application/json; charset=utf-8',
+          Vary: 'Accept',
+        });
       }
 
       const renderOptions = {
@@ -349,7 +392,7 @@ export function aurelia<
         ...documentOpts,
       });
 
-      return c.html(document, effectiveStatus);
+      return c.html(document, effectiveStatus, { Vary: 'Accept' });
     } catch (error) {
       if (typeof onError === 'function') {
         return await onError(error, c);
@@ -375,11 +418,47 @@ function hasSingleAction<E extends Env>(
   return 'action' in source && typeof source.action === 'function';
 }
 
+function isCsrfAllowed(req: Request, csrfOption?: boolean | AureliaCsrfOptions): boolean {
+  if (csrfOption === false) return true;
+  const method = req.method.toUpperCase();
+  if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') {
+    return true;
+  }
+
+  const opts: AureliaCsrfOptions = typeof csrfOption === 'object' ? csrfOption : {};
+  const trusted = new Set(opts.trustedOrigins ?? []);
+  const reqOrigin = new URL(req.url).origin;
+  const originHeader = req.headers.get('origin');
+  const secFetchSite = req.headers.get('sec-fetch-site');
+
+  if (secFetchSite === 'cross-site') {
+    return false;
+  }
+
+  if (originHeader !== null) {
+    return originHeader === reqOrigin || trusted.has(originHeader);
+  }
+
+  if (secFetchSite !== null) {
+    return secFetchSite === 'same-origin' || secFetchSite === 'none';
+  }
+
+  return !opts.requireOriginOnForms;
+}
+
+function buildPrgLocation(reqUrl: string): string {
+  const parsed = new URL(reqUrl);
+  parsed.searchParams.delete('_action');
+  const qs = parsed.searchParams.toString();
+  return qs ? `${parsed.pathname}?${qs}` : parsed.pathname;
+}
+
 /**
  * Strictly typed explicit Hono route handler for Aurelia server actions.
  *
  * Accepts either a named action map `{ like, comment }` or a component exposing
- * static `actions` / `action`. Zero runtime constructor sniffing.
+ * static `actions` / `action`. Enforces Fetch-spec CSRF validation by default and
+ * supports Post/Redirect/Get (PRG) fallback for non-JS HTML `<form>` submissions.
  */
 export function aureliaAction<E extends Env = Env>(
   source: AureliaActionSource<E>,
@@ -396,6 +475,10 @@ export function aureliaAction<E extends Env = Env>(
     : undefined;
 
   return async (c: Context<E>): Promise<Response> => {
+    if (!isCsrfAllowed(c.req.raw, options?.csrf)) {
+      return c.json({ error: 'Cross-site action request forbidden' }, 403);
+    }
+
     const resolved = options?.resolveAction
       ? await options.resolveAction(c)
       : c.req.query('_action') || c.req.header('X-Action');
@@ -414,6 +497,15 @@ export function aureliaAction<E extends Env = Env>(
     const result = await handler(c);
     if (result instanceof Response) {
       return result;
+    }
+
+    const isEnhanced = c.req.header('X-Aurelia-Enhance') === '1';
+    if (!isEnhanced && acceptsHtmlOverJson(c.req.header('Accept'))) {
+      const target =
+        typeof options?.redirectTo === 'function'
+          ? options.redirectTo(result, c)
+          : (options?.redirectTo ?? buildPrgLocation(c.req.url));
+      return c.redirect(target, 303);
     }
 
     return c.json(result !== undefined ? result : { success: true });

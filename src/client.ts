@@ -1,11 +1,13 @@
 /**
  * @hono/aurelia Client Entrypoint
  *
- * Lightweight, zero-server-leak client hydration utilities for Aurelia 2 on Hono.
- * Re-exports the client-side hydration engine from @aureliajs/ssr/client.
+ * Lightweight, zero-server-leak client hydration, soft-navigation, and progressive
+ * form enhancement (`au-enhance`) utilities for Aurelia 2 on Hono.
  */
 
 export {
+  decodeHydrationPayload,
+  decodeRichValue,
   hydrateFromServer,
   isHydrationAvailable,
   peekHydrationPayload,
@@ -23,3 +25,20 @@ export {
   type ClientHydratorOptions,
   type IRequestContextType,
 } from '@aureliajs/ssr/client';
+
+export {
+  AuEnhanceCustomAttribute,
+  EnhanceConfiguration,
+  IAureliaClientNavigator,
+  resolveClientNavigator,
+  type ClientNavigatorController,
+  type EnhanceAfterSubmit,
+  type EnhanceResultContext,
+  type EnhanceSubmitContext,
+  type EnhanceSubmitHook,
+} from './enhance';
+
+export {
+  createClientNavigator,
+  type ClientNavigatorOptions,
+} from './navigator';

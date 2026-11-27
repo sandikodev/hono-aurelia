@@ -8,18 +8,9 @@ export {
   aurelia,
   aureliaAction,
   aureliaDefaults,
+  aureliaLayout,
   aureliaRenderer,
 } from './adapter';
-
-export {
-  buildClient,
-  buildWorker,
-  createVirtualClientPlugin,
-  stubJsdomPlugin,
-  type ClientBuildOptions,
-  type WorkerBuildOptions,
-  type BuildOutputStats,
-} from './builder';
 
 export type {
   AureliaActionHandler,
@@ -27,7 +18,9 @@ export type {
   AureliaActionOptions,
   AureliaActionSource,
   AureliaComponent,
+  AureliaCsrfOptions,
   AureliaDefaultsOptions,
+  AureliaLayoutOptions,
   AureliaLoader,
   AureliaRouteComponent,
   AureliaRouteConfig,
