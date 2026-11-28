@@ -30,6 +30,12 @@ import {
   type ClientNavigatorController,
 } from './enhance';
 
+/** Component- or navigator-level hook for per-history-entry form/tab state. */
+export interface HistorySnapshotHook {
+  capture(): unknown;
+  restore(value: unknown): void;
+}
+
 export interface ClientNavigatorOptions<
   TContext extends Record<string, unknown> = Record<string, unknown>,
   TData = Record<string, unknown>,
@@ -40,8 +46,21 @@ export interface ClientNavigatorOptions<
   preload?: boolean;
   /** Time-to-live in ms for preloaded route JSON entries (default: `5000`). */
   preloadTtl?: number;
+  /**
+   * Fallback snapshot hook when the active component does not expose one.
+   * A hook on the component instance takes precedence.
+   */
+  snapshot?: HistorySnapshotHook;
   /** Custom `fetch` implementation (useful for hermetic unit testing without network). */
   fetch?: typeof fetch;
+}
+
+function asSnapshotHook(value: unknown): HistorySnapshotHook | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const candidate = value as Partial<HistorySnapshotHook>;
+  return typeof candidate.capture === 'function' && typeof candidate.restore === 'function'
+    ? (candidate as HistorySnapshotHook)
+    : null;
 }
 
 interface RouteDataEnvelope<
@@ -176,6 +195,54 @@ export async function createClientNavigator<
   } | null = null;
   let navEpoch = 0;
 
+  // Per-entry snapshot bookkeeping. The key lives in history.state while the
+  // serialized value lives in sessionStorage, so a reload does not grow URLs.
+  const snapshotPrefix = 'aurelia:snapshot:';
+  let snapshotCounter = 0;
+  let currentSnapshotKey: string | null = null;
+
+  const nextSnapshotKey = (): string => `${snapshotPrefix}${Date.now().toString(36)}-${++snapshotCounter}`;
+  const readSnapshot = (key: string): unknown => {
+    try {
+      const raw = win.sessionStorage?.getItem(key);
+      return raw == null ? undefined : JSON.parse(raw);
+    } catch {
+      return undefined;
+    }
+  };
+  const writeSnapshot = (key: string, value: unknown): void => {
+    try {
+      win.sessionStorage?.setItem(key, JSON.stringify(value));
+    } catch {
+      // Storage can be unavailable or full; navigation must still proceed.
+    }
+  };
+  const activeSnapshotHook = (): HistorySnapshotHook | null =>
+    asSnapshotHook((activeInstance as Record<string, unknown> | null)?.snapshot) ?? options.snapshot ?? null;
+
+  const captureActiveSnapshot = (): void => {
+    if (!currentSnapshotKey) return;
+    const hook = activeSnapshotHook();
+    if (!hook) return;
+    try {
+      writeSnapshot(currentSnapshotKey, hook.capture());
+    } catch {
+      // A component hook must not be able to break navigation.
+    }
+  };
+  const restoreSnapshot = (key: string | null): void => {
+    if (!key) return;
+    const value = readSnapshot(key);
+    if (value === undefined) return;
+    const hook = activeSnapshotHook();
+    if (!hook) return;
+    try {
+      hook.restore(value);
+    } catch (error) {
+      options.onError?.(error);
+    }
+  };
+
   const mountComponent = async (
     compName: string,
     ComponentClass: Constructable,
@@ -300,19 +367,30 @@ export async function createClientNavigator<
     return parsed;
   };
 
-  const commitHistory = (resolvedUrl: URL, historyMode: 'push' | 'replace' | 'none'): void => {
+  const commitHistory = (
+    resolvedUrl: URL,
+    historyMode: 'push' | 'replace' | 'none',
+    snapshotKey: string
+  ): void => {
+    const state = {
+      ...(win.history?.state as Record<string, unknown> | undefined),
+      aureliaUrl: resolvedUrl.toString(),
+      aureliaSnapshotKey: snapshotKey,
+    };
     if (historyMode === 'push' && win.history?.pushState) {
-      win.history.pushState({ aureliaUrl: resolvedUrl.toString() }, '', resolvedUrl.pathname + resolvedUrl.search + resolvedUrl.hash);
+      win.history.pushState(state, '', resolvedUrl.pathname + resolvedUrl.search + resolvedUrl.hash);
     } else if (historyMode === 'replace' && win.history?.replaceState) {
-      win.history.replaceState({ aureliaUrl: resolvedUrl.toString() }, '', resolvedUrl.pathname + resolvedUrl.search + resolvedUrl.hash);
+      win.history.replaceState(state, '', resolvedUrl.pathname + resolvedUrl.search + resolvedUrl.hash);
     }
+    currentSnapshotKey = snapshotKey;
   };
 
   const applyEnvelope = async (
     envelope: RouteDataEnvelope<TContext, TData>,
     resolvedUrl: URL,
     historyMode: 'push' | 'replace' | 'none',
-    epoch: number
+    epoch: number,
+    snapshotKey: string
   ): Promise<object | null> => {
     if (epoch !== navEpoch) {
       return activeInstance;
@@ -340,7 +418,7 @@ export async function createClientNavigator<
         Object.assign(activeInstance, decoded.initialData);
       }
       activeUrl = resolvedUrl.toString();
-      commitHistory(resolvedUrl, historyMode);
+      commitHistory(resolvedUrl, historyMode, snapshotKey);
       return activeInstance;
     }
 
@@ -359,7 +437,7 @@ export async function createClientNavigator<
       return activeInstance;
     }
 
-    commitHistory(resolvedUrl, historyMode);
+    commitHistory(resolvedUrl, historyMode, snapshotKey);
     return instance;
   };
 
@@ -391,6 +469,11 @@ export async function createClientNavigator<
 
     async navigate(url: string, navOpts?: { replace?: boolean }): Promise<object | null> {
       const epoch = ++navEpoch;
+      const replace = navOpts?.replace === true;
+      captureActiveSnapshot();
+      const snapshotKey = replace
+        ? (currentSnapshotKey ?? nextSnapshotKey())
+        : nextSnapshotKey();
       const origin = new URL(activeUrl).origin;
       const resolved = new URL(url, origin);
       if (resolved.origin !== origin) {
@@ -416,11 +499,13 @@ export async function createClientNavigator<
         return null;
       }
 
-      return await applyEnvelope(envelope, resolved, navOpts?.replace ? 'replace' : 'push', epoch);
+      return await applyEnvelope(envelope, resolved, replace ? 'replace' : 'push', epoch, snapshotKey);
     },
 
     async invalidate(url?: string): Promise<void> {
       const epoch = ++navEpoch;
+      captureActiveSnapshot();
+      const snapshotKey = currentSnapshotKey ?? nextSnapshotKey();
       preloadCache.clear();
       const target = url ?? activeUrl;
       const origin = new URL(activeUrl).origin;
@@ -428,7 +513,7 @@ export async function createClientNavigator<
       if (resolved.origin !== origin) return;
       const envelope = await fetchRouteEnvelope(resolved.toString());
       if (envelope) {
-        await applyEnvelope(envelope, resolved, 'none', epoch);
+        await applyEnvelope(envelope, resolved, 'none', epoch, snapshotKey);
       }
     },
 
@@ -468,6 +553,19 @@ export async function createClientNavigator<
     hydration?.params,
     hydration?.ssrScope
   );
+  const initialHistoryState = (win.history?.state as Record<string, unknown> | null) ?? {};
+  const existingSnapshotKey =
+    typeof initialHistoryState.aureliaSnapshotKey === 'string'
+      ? initialHistoryState.aureliaSnapshotKey
+      : null;
+  currentSnapshotKey = existingSnapshotKey ?? nextSnapshotKey();
+  if (!existingSnapshotKey && win.history?.replaceState) {
+    win.history.replaceState(
+      { ...initialHistoryState, aureliaSnapshotKey: currentSnapshotKey },
+      ''
+    );
+  }
+
   options.onHydrated?.(bootName || BootClass.name, bootedInstance, hydration);
 
   // Delegated link click interception
@@ -486,18 +584,28 @@ export async function createClientNavigator<
     };
     doc.addEventListener('click', onClick);
     listenersCleanup.push(() => doc.removeEventListener('click', onClick));
-
-    const onPopState = () => {
-      if (!win.location) return;
-      const epoch = ++navEpoch;
-      const resolved = new URL(win.location.href);
-      void fetchRouteEnvelope(resolved.toString()).then((env) => {
-        if (env) void applyEnvelope(env, resolved, 'none', epoch);
-      });
-    };
-    win.addEventListener('popstate', onPopState);
-    listenersCleanup.push(() => win.removeEventListener('popstate', onPopState));
   }
+
+  // Back/forward: capture the outgoing entry, then restore the incoming entry's
+  // snapshot after its component has mounted.
+  const onPopState = (ev: PopStateEvent) => {
+    if (!win.location) return;
+    const state = (ev.state as { aureliaSnapshotKey?: unknown } | null) ?? null;
+    const targetKey =
+      typeof state?.aureliaSnapshotKey === 'string'
+        ? state.aureliaSnapshotKey
+        : (currentSnapshotKey ?? nextSnapshotKey());
+    captureActiveSnapshot();
+    const epoch = ++navEpoch;
+    const resolved = new URL(win.location.href);
+    void fetchRouteEnvelope(resolved.toString()).then(async (env) => {
+      if (!env || epoch !== navEpoch) return;
+      await applyEnvelope(env, resolved, 'none', epoch, targetKey);
+      restoreSnapshot(targetKey);
+    });
+  };
+  win.addEventListener('popstate', onPopState);
+  listenersCleanup.push(() => win.removeEventListener('popstate', onPopState));
 
   // Delegated hover/tap preloading (`data-au-preload="hover"` | `data-au-preload="tap"` | `data-au-preload`)
   if (options.preload !== false) {

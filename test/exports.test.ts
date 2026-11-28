@@ -11,6 +11,8 @@ describe('@hono/aurelia exports contract', () => {
     expect(Root.aureliaDefaults).toBeDefined();
     expect(Root.aureliaLayout).toBeDefined();
     expect(Root.aureliaRenderer).toBe(Root.aureliaDefaults);
+    expect(Root.aureliaStream).toBeDefined();
+    expect(Root.defineEnv).toBeDefined();
     expect(Root.VERSION).toBe('1.0.0-alpha.1');
 
     // Strict boundary: no SSR engine re-exports, no global mutable state, no Node build bundler at root
@@ -34,6 +36,8 @@ describe('@hono/aurelia exports contract', () => {
     expect(Server.aureliaDefaults).toBe(Root.aureliaDefaults);
     expect(Server.aureliaLayout).toBe(Root.aureliaLayout);
     expect(Server.aureliaRenderer).toBe(Root.aureliaRenderer);
+    expect(Server.aureliaStream).toBe(Root.aureliaStream);
+    expect(Server.defineEnv).toBe(Root.defineEnv);
     expect((Server as Record<string, unknown>).buildClient).toBeUndefined();
   });
 
@@ -46,12 +50,17 @@ describe('@hono/aurelia exports contract', () => {
     expect(Client.isHydrationAvailable).toBeDefined();
     expect(Client.peekHydrationPayload).toBeDefined();
     expect(Client.clearHydration).toBeDefined();
+    expect(Client.createLiveStream).toBeDefined();
+    expect(Client.subscribeLive).toBeDefined();
+    expect(Client.parseLiveFrame).toBeDefined();
 
-    // Verify zero server adapter leakage into client bundle
+    // Verify zero server adapter or private env leakage into client bundle
     const clientRecord = Client as Record<string, unknown>;
     expect(clientRecord.aurelia).toBeUndefined();
     expect(clientRecord.aureliaAction).toBeUndefined();
     expect(clientRecord.aureliaDefaults).toBeUndefined();
     expect(clientRecord.aureliaLayout).toBeUndefined();
+    expect(clientRecord.aureliaStream).toBeUndefined();
+    expect(clientRecord.defineEnv).toBeUndefined();
   });
 });

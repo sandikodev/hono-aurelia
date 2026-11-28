@@ -1,7 +1,13 @@
 import { describe, it, expect } from 'bun:test';
+import { JSDOM } from 'jsdom';
 import { Hono } from 'hono';
 import { CustomElement } from 'aurelia';
-import { DEFAULT_SCRIPT_ID, resolveRequestContext } from '@aureliajs/ssr';
+import {
+  DEFAULT_SCRIPT_ID,
+  hydrateFromServer,
+  observeDeferredHydration,
+  resolveRequestContext,
+} from '@aureliajs/ssr';
 import { aurelia, aureliaAction, aureliaDefaults, aureliaLayout, aureliaRenderer } from '../src/adapter';
 
 const SimplePage = CustomElement.define(
@@ -82,6 +88,150 @@ describe('@hono/aurelia adapter', () => {
       expect(rest).toContain('Streamed Body');
       expect(rest).toContain(`<script id="${DEFAULT_SCRIPT_ID}" type="application/json">`);
       expect(rest).toContain('<script type="module" src="/client.js"></script>');
+    });
+
+    it('streams deferred promises as data-au-deferred chunks and resolves them during client hydration', async () => {
+      const DeferredPage = CustomElement.define(
+        { name: 'deferred-stream-page', template: '<section>${fast}</section>' },
+        class {
+          fast = '';
+          slow: Promise<{ greeting: string; count: number }> | null = null;
+          failing: Promise<string> | null = null;
+        }
+      );
+
+      let resolveSlow!: (value: { greeting: string; count: number }) => void;
+      let rejectFailing!: (err: Error) => void;
+      const slowPromise = new Promise<{ greeting: string; count: number }>((resolve) => {
+        resolveSlow = resolve;
+      });
+      const failingPromise = new Promise<string>((_, reject) => {
+        rejectFailing = reject;
+      });
+
+      const app = new Hono();
+      app.get(
+        '/stream-deferred',
+        aurelia({
+          component: DeferredPage,
+          title: 'Deferred Stream',
+          preserveMarkers: false,
+          streaming: true,
+          loader: () => ({
+            fast: 'instant-shell',
+            slow: slowPromise,
+            failing: failingPromise,
+          }),
+        })
+      );
+
+      const res = await app.request('/stream-deferred');
+      expect(res.status).toBe(200);
+      expect(res.body).not.toBeNull();
+
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+
+      // Chunk 1: <head> preamble
+      const c1 = await reader.read();
+      expect(c1.done).toBe(false);
+      const preamble = decoder.decode(c1.value);
+      expect(preamble).toContain('<title>Deferred Stream</title>');
+
+      // Chunk 2 & 3: SSR HTML + initial hydration payload MUST arrive BEFORE deferred promises settle
+      const c2 = await reader.read();
+      expect(c2.done).toBe(false);
+      const htmlChunk = decoder.decode(c2.value);
+
+      const c3 = await reader.read();
+      expect(c3.done).toBe(false);
+      const hydrationChunk = decoder.decode(c3.value);
+
+      const earlyOutput = htmlChunk + hydrationChunk;
+      expect(earlyOutput).toContain('instant-shell');
+      expect(earlyOutput).toContain(`<script id="${DEFAULT_SCRIPT_ID}" type="application/json">`);
+      expect(earlyOutput).toContain('"encoding":"rich"');
+      expect(earlyOutput).toContain('["$p","d1"]');
+      expect(earlyOutput).toContain('["$p","d2"]');
+      expect(earlyOutput).not.toContain('data-au-deferred=');
+      expect(earlyOutput).not.toContain('</body>');
+
+      // Settle deferred promises after initial payload is already flushed
+      resolveSlow({ greeting: 'streamed later', count: 7 });
+      rejectFailing(new Error('deferred boom'));
+
+      let deferredTail = '';
+      while (true) {
+        const next = await reader.read();
+        if (next.done) break;
+        deferredTail += decoder.decode(next.value);
+      }
+
+      expect(deferredTail).toContain('data-au-deferred="d1"');
+      expect(deferredTail).toContain('streamed later');
+      expect(deferredTail).toContain('data-au-deferred="d2"');
+      expect(deferredTail).toContain('deferred boom');
+      expect(deferredTail).toContain('</body>');
+
+      // Verify true client hydration via @aureliajs/ssr in JSDOM as chunks append dynamically
+      const postambleIndex = deferredTail.indexOf('</div>');
+      const deferredScriptsHtml = deferredTail.slice(0, postambleIndex);
+      const postambleHtml = deferredTail.slice(postambleIndex);
+
+      const dom = new JSDOM(preamble + htmlChunk + hydrationChunk + postambleHtml);
+      const g = globalThis as Record<string, unknown>;
+      const prevDocument = g.document;
+      const prevWindow = g.window;
+      const prevObserver = g.MutationObserver;
+
+      let stopObserver: (() => void) | undefined;
+      try {
+        g.document = dom.window.document;
+        g.window = dom.window;
+        g.MutationObserver = dom.window.MutationObserver;
+
+        const hydrated = hydrateFromServer<{
+          fast: string;
+          slow: Promise<{ greeting: string; count: number }>;
+          failing: Promise<string>;
+        }>();
+        expect(hydrated).not.toBeNull();
+        expect(hydrated!.initialData?.fast).toBe('instant-shell');
+        expect(hydrated!.initialData?.slow).toBeInstanceOf(Promise);
+        expect(hydrated!.initialData?.failing).toBeInstanceOf(Promise);
+
+        const slowPromiseOnClient = hydrated!.initialData!.slow;
+        const failingErrorOnClient = hydrated!.initialData!.failing.then(
+          () => null,
+          (err: unknown) => err
+        );
+
+        stopObserver = observeDeferredHydration(dom.window.document);
+
+        // Append streamed data-au-deferred script elements dynamically
+        const fragmentContainer = dom.window.document.createElement('div');
+        fragmentContainer.innerHTML = deferredScriptsHtml;
+        for (const node of Array.from(fragmentContainer.querySelectorAll('script[data-au-deferred]'))) {
+          dom.window.document.body.appendChild(node);
+        }
+
+        expect(await slowPromiseOnClient).toEqual({
+          greeting: 'streamed later',
+          count: 7,
+        });
+        const clientErr = await failingErrorOnClient;
+        expect(clientErr).toBeInstanceOf(Error);
+        expect((clientErr as Error).message).toBe('deferred boom');
+      } finally {
+        stopObserver?.();
+        if (prevDocument === undefined) delete g.document;
+        else g.document = prevDocument;
+        if (prevWindow === undefined) delete g.window;
+        else g.window = prevWindow;
+        if (prevObserver === undefined) delete g.MutationObserver;
+        else g.MutationObserver = prevObserver;
+        dom.window.close();
+      }
     });
   });
 

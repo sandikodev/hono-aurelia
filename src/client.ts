@@ -41,4 +41,14 @@ export {
 export {
   createClientNavigator,
   type ClientNavigatorOptions,
+  type HistorySnapshotHook,
 } from './navigator';
+
+export {
+  createLiveStream,
+  subscribeLive,
+  parseLiveFrame,
+  type LiveMessage,
+  type LiveStreamController,
+  type LiveStreamOptions,
+} from './live-client';

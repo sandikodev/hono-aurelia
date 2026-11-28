@@ -12,14 +12,17 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { CustomElement } from 'aurelia';
 import {
   DEFAULT_SCRIPT_ID,
+  createDeferredScript,
   createDocumentShell,
   createHtmlDocument,
   createHydrationScript,
   renderAurelia,
   serializeState,
+  serializeStateStream,
   stringifyPayload,
   type AureliaComponent,
   type ComponentProps,
+  type DeferredPromiseEntry,
   type RenderContext,
 } from '@aureliajs/ssr';
 import type {
@@ -125,6 +128,34 @@ export function aureliaLayout<
     await next();
     return;
   };
+}
+
+function containsPromise(value: unknown, seen = new WeakSet<object>()): boolean {
+  if (value === null || typeof value !== 'object') return false;
+  if (typeof (value as { then?: unknown }).then === 'function') return true;
+  if (seen.has(value)) return false;
+  seen.add(value);
+  if (Array.isArray(value)) {
+    return value.some((item) => containsPromise(item, seen));
+  }
+  if (value instanceof Map) {
+    for (const [k, v] of value.entries()) {
+      if (containsPromise(k, seen) || containsPromise(v, seen)) return true;
+    }
+    return false;
+  }
+  if (value instanceof Set) {
+    for (const item of value) {
+      if (containsPromise(item, seen)) return true;
+    }
+    return false;
+  }
+  const proto = Object.getPrototypeOf(value);
+  if (proto !== Object.prototype && proto !== null) return false;
+  for (const val of Object.values(value)) {
+    if (containsPromise(val, seen)) return true;
+  }
+  return false;
 }
 
 function parseMimeQuality(acceptHeader: string, mime: string): number {
@@ -353,6 +384,74 @@ export function aurelia<
                 } else {
                   throw renderError;
                 }
+              }
+
+              const useDeferredStream =
+                serializeOpts?.richTypes === true ||
+                containsPromise(initialData) ||
+                containsPromise(context);
+
+              if (useDeferredStream) {
+                const { payload, pending } = serializeStateStream(
+                  context,
+                  initialData,
+                  componentName,
+                  {
+                    ...serializeOpts,
+                    richTypes: true,
+                  }
+                );
+
+                controller.enqueue(encoder.encode(html));
+                controller.enqueue(
+                  encoder.encode(`\n    ${createHydrationScript(payload, scriptId)}`)
+                );
+
+                let nextNestedIndex = 0;
+                const drainPending = async (
+                  entries: readonly DeferredPromiseEntry[]
+                ): Promise<void> => {
+                  const nestedTasks: Promise<void>[] = [];
+                  await Promise.all(
+                    entries.map((entry) =>
+                      entry.promise.then(
+                        (resolvedValue) => {
+                          const nestedEntries: DeferredPromiseEntry[] = [];
+                          const scriptChunk = createDeferredScript(entry.id, resolvedValue, {
+                            replacer: serializeOpts?.replacer,
+                            onPromise: (nestedPromise) => {
+                              const nestedId = `dn${++nextNestedIndex}`;
+                              nestedPromise.then(undefined, () => {});
+                              nestedEntries.push({ id: nestedId, promise: nestedPromise });
+                              return nestedId;
+                            },
+                          });
+                          controller.enqueue(encoder.encode(`\n    ${scriptChunk}`));
+                          if (nestedEntries.length > 0) {
+                            nestedTasks.push(drainPending(nestedEntries));
+                          }
+                        },
+                        (rejectedError) => {
+                          const errorChunk = createDeferredScript(entry.id, undefined, {
+                            error: rejectedError,
+                          });
+                          controller.enqueue(encoder.encode(`\n    ${errorChunk}`));
+                        }
+                      )
+                    )
+                  );
+                  if (nestedTasks.length > 0) {
+                    await Promise.all(nestedTasks);
+                  }
+                };
+
+                if (pending.length > 0) {
+                  await drainPending(pending);
+                }
+
+                controller.enqueue(encoder.encode(shell.postamble));
+                controller.close();
+                return;
               }
 
               const payload = await serializeState(
